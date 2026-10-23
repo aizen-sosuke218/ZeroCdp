@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="src/ZeroCdp/ZeroCdp.csproj" />
+  <Project Path="tests/ZeroCdp.Tests/ZeroCdp.Tests.csproj" />
+  <Project Path="tests/ZeroCdp.Benchmarks/ZeroCdp.Benchmarks.csproj" />
+  <Project Path="samples/ZeroCdp.Sample.AotConsole/ZeroCdp.Sample.AotConsole.csproj" />
+  <Project Path="samples/ZeroCdp.Sample.BotCheck/ZeroCdp.Sample.BotCheck.csproj" />
+  <Project Path="samples/ZeroCdp.Sample.RealWorld/ZeroCdp.Sample.RealWorld.csproj" />
+</Solution>

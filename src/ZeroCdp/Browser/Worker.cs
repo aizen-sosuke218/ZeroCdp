@@ -1,0 +1,61 @@
+using ZeroCdp.Protocol;
+using ZeroCdp.Runtime;
+
+namespace ZeroCdp.Browser;
+
+/// <summary>The kind of worker target attached to a page.</summary>
+public enum WorkerKind
+{
+    Dedicated = 0,
+    Shared = 1,
+    Service = 2,
+}
+
+/// <summary>
+/// A dedicated, shared or service worker owned by a page. Worker evaluation uses the worker's
+/// main context and does not enable the Runtime domain.
+/// </summary>
+public sealed class Worker
+{
+    private readonly CdpSession _session;
+    private int _closed;
+
+    internal Worker(CdpPage page, CdpSession session)
+    {
+        Page = page;
+        _session = session;
+        Url = session.Url;
+        Kind = session.TargetType switch
+        {
+            "service_worker" => WorkerKind.Service,
+            "shared_worker" => WorkerKind.Shared,
+            _ => WorkerKind.Dedicated,
+        };
+    }
+
+    public CdpPage Page { get; }
+
+    public string Url { get; }
+
+    public WorkerKind Kind { get; }
+
+    public string TargetId => _session.TargetId;
+
+    public bool IsClosed => Volatile.Read(ref _closed) != 0;
+
+    /// <summary>Evaluates JavaScript in the worker's main context.</summary>
+    public async ValueTask<EvaluationResult> EvaluateAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return await _session
+            .SendAsync<EvaluationResult, EvaluateParams>(
+                "Runtime.evaluate"u8,
+                EvaluateParams.MainWorld(expression),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal void MarkClosed() => Interlocked.Exchange(ref _closed, 1);
+}

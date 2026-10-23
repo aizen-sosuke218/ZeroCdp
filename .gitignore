@@ -1,0 +1,39 @@
+# Build results
+bin/
+obj/
+artifacts/
+
+# .NET packaging
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pubxml
+*.pubxml.user
+
+# Test & benchmark results
+TestResults/
+[Bb]ench/
+*.trx
+*.coverage
+coverage/
+coveragereport/
+
+# Publish output
+publish/
+
+# Browser profiles and sample artifacts
+*.zerocdp/
+.zerocdp/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>ZeroCdp</RootNamespace>
+    <AssemblyName>ZeroCdp</AssemblyName>
+    <PackageId>ZeroCdp</PackageId>
+    <Version>0.1.0-alpha</Version>
+    <Description>Zero-allocation, NativeAOT-friendly Chrome DevTools Protocol client for .NET.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Authors>ZeroCDP contributors</Authors>
+    <PackageTags>chrome;chromium;cdp;devtools;automation;browser-automation;scraping;stealth;playwright;nativeaot;aot;zero-allocation;trimming</PackageTags>
+    <PackageReleaseNotes>First public alpha: pipe transport on Linux/macOS/Windows, zero-allocation dispatch, isolated-world evaluation without Runtime.enable, Playwright-style locators/options/assertions, contexts, network routing, OOPIF support, storage state, tracing, video and coverage. See README for known limitations.</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
