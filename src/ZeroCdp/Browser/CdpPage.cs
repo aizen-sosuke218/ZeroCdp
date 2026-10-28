@@ -680,8 +680,42 @@ public sealed partial class CdpPage : IAsyncDisposable
         RaiseClosed();
     }
 
-    public async ValueTask CloseAsync(CancellationToken cancellationToken = default)
+    public ValueTask CloseAsync(CancellationToken cancellationToken = default)
+        => CloseAsync(new PageCloseOptions(), cancellationToken);
+
+    /// <summary>
+    /// Closes the page. With <see cref="PageCloseOptions.RunBeforeUnload"/> the browser runs the
+    /// document's <c>beforeunload</c> hooks through <c>Page.close</c>; the page may stay open if a
+    /// dialog is dismissed, so <see cref="IsClosed"/> can still be false when the call returns.
+    /// </summary>
+    public async ValueTask CloseAsync(
+        PageCloseOptions options,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (options.RunBeforeUnload)
+        {
+            if (Volatile.Read(ref _closed) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                await Session
+                    .SendAsync<Unit>("Page.close"u8, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (CdpConnectionClosedException)
+            {
+                // The browser is already gone, so the page is closed by definition.
+            }
+
+            // If the target really closes, the detach path runs MarkClosed and raises Close.
+            return;
+        }
+
         if (Interlocked.Exchange(ref _closed, 1) != 0)
         {
             return;

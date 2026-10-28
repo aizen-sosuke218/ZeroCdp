@@ -281,6 +281,17 @@ Các mục Patchright không dùng hoặc không hỗ trợ được đánh dấ
   (`CookiesAsync`, `AddCookiesAsync`, `ClearCookiesAsync(options)`, `ClearGeolocationAsync`),
   `APIResponse.HeadersAsync`/`HeadersArrayAsync`, `APIRequestContext.StorageStateAsync` và
   `DragAndDropAsync`. Tổng **228 test**, dispatch vẫn **0 B/op**.
+- Quản lý tab kiểu Playwright: `PageOpened` cùng alias `Page` nổ cho cả `NewPageAsync` lẫn popup
+  (tab có mặt trong `Pages` trước khi handler chạy), `WaitForPageAsync`/`RunAndWaitForPageAsync`
+  trên context, `CloseAsync(PageCloseOptions { RunBeforeUnload })` đi qua `Page.close` nên tab có
+  thể vẫn mở khi hook/dialog chặn, `Browser.CloseAsync` và `LaunchedBrowser.CloseAsync`.
+  Tổng **237 test**, gồm test live `https://example.com` với Chromium thật (tự bỏ qua khi offline).
+- Sửa race double-complete trong `PendingCommand`: callback huỷ từ `CancellationToken` có thể chạy
+  sau khi response đã hoàn tất command và làm `SetException` ném trên thread timer, giết process.
+  Mọi đường hoàn tất giờ đi qua `Interlocked` một lần duy nhất; khi huỷ thắng, entry được `Abandon`
+  trước khi slot về pool nên response đến muộn không thể ghi đè command tái sử dụng. Có 2 test
+  regression trong `FrameDispatcherTests`. Suite chạy 3 lần liên tiếp 237/237; AOT sample publish +
+  chạy thật exit 0.
 
 **Việc tối ưu còn lại đã biết**: scan JSON hiện là scalar (~1.5 ns/byte). Với frame lớn (>8 KB)
 viết lại bằng `Vector256` sẽ có lợi; với frame CDP thường gặp thì lợi ích nhỏ vì Chrome là nút cổ chai.

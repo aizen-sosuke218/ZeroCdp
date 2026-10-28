@@ -36,7 +36,9 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
     private static readonly Lock Gate = new();
 
     private ManualResetValueTaskSourceCore<T> _core;
+    private FrameDispatcher? _owner;
     private bool _released;
+    private int _completed;
 
     private PendingCommand(bool runContinuationsAsynchronously)
     {
@@ -59,11 +61,13 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
         return new PendingCommand<T>(runContinuationsAsynchronously);
     }
 
-    public void Prepare(long id)
+    public void Prepare(long id, FrameDispatcher owner)
     {
         Id = id;
         Deadline = 0;
         _released = false;
+        _owner = owner;
+        Volatile.Write(ref _completed, 0);
         _core.Reset();
     }
 
@@ -71,6 +75,11 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
 
     public override void Complete(ReadOnlySpan<byte> resultUtf8)
     {
+        if (!TryComplete())
+        {
+            return;
+        }
+
         if (T.TryParse(resultUtf8, out T value))
         {
             _core.SetResult(value);
@@ -82,17 +91,49 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
     }
 
     public override void Fail(int code, string message, string? errorData)
-        => _core.SetException(new CdpCommandException(code, message, errorData));
+    {
+        if (TryComplete())
+        {
+            _core.SetException(new CdpCommandException(code, message, errorData));
+        }
+    }
 
     public override void Abort(CdpException reason)
-        => _core.SetException(reason);
+    {
+        if (TryComplete())
+        {
+            _core.SetException(reason);
+        }
+    }
 
     public override void Cancel()
-        => _core.SetException(new OperationCanceledException("The CDP command was cancelled."));
+    {
+        if (!TryComplete())
+        {
+            return;
+        }
+
+        // The response may still arrive after the caller gave up on the command. Dropping the
+        // entry first keeps a late frame from completing a slot that the pool already reused.
+        _owner?.Abandon(Id);
+        _core.SetException(new OperationCanceledException("The CDP command was cancelled."));
+    }
 
     public override void Timeout()
-        => _core.SetException(new CdpTimeoutException(
-            $"CDP command {Id} did not complete before its timeout elapsed."));
+    {
+        if (TryComplete())
+        {
+            _core.SetException(new CdpTimeoutException(
+                $"CDP command {Id} did not complete before its timeout elapsed."));
+        }
+    }
+
+    /// <summary>
+    /// Claims the single completion slot. Completion can race cancellation, timeout and a late
+    /// response; without this a second <c>Set*</c> throws on a thread-pool thread and takes the
+    /// process down.
+    /// </summary>
+    private bool TryComplete() => Interlocked.Exchange(ref _completed, 1) == 0;
 
     T IValueTaskSource<T>.GetResult(short token)
     {
@@ -137,6 +178,7 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
 
         _released = true;
         Id = 0;
+        _owner = null;
         Registration.Dispose();
         Registration = default;
         lock (Gate)

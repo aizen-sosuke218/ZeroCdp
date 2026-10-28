@@ -223,7 +223,11 @@ public sealed partial class BrowserContext : IAsyncDisposable
         }
     }
 
-    /// <summary>Raised on the reader thread when a popup is registered in this context.</summary>
+    /// <summary>
+    /// Raised when a page registers in this context: pages created through
+    /// <see cref="NewPageAsync(string,CancellationToken)"/> and pages opened by a page, for example
+    /// <c>window.open</c>. The page is present in <see cref="Pages"/> by the time the handler runs.
+    /// </summary>
     public event Action<CdpPage>? PageOpened
     {
         add

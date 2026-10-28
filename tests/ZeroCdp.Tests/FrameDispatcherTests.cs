@@ -59,6 +59,58 @@ public class FrameDispatcherTests
     }
 
     /// <summary>
+    /// A token timer can fire after the response already completed the command. The callback must
+    /// be a no-op; a second SetException throws on the timer thread and kills the process.
+    /// </summary>
+    [Fact]
+    public async Task Cancellation_after_completion_is_ignored()
+    {
+        FrameDispatcher dispatcher = new(runContinuationsAsynchronously: true);
+        using CancellationTokenSource cancellation = new();
+        PendingCommand<IntResult> slot = dispatcher.Register<IntResult>(11);
+        slot.Registration = cancellation.Token.Register(
+            static state => ((PendingCommand)state!).Cancel(),
+            slot);
+        ValueTask<IntResult> pending = slot.AsValueTask();
+
+        dispatcher.Dispatch("""{"id":11,"result":{"value":7}}"""u8);
+        cancellation.Cancel();
+
+        Assert.Equal(7, (await pending).Value);
+        Assert.Equal(0, dispatcher.PendingCount);
+    }
+
+    /// <summary>
+    /// When cancellation wins, the pending entry must be dropped before the slot returns to the
+    /// pool, otherwise a late response could complete a recycled slot with the wrong result.
+    /// </summary>
+    [Fact]
+    public async Task Late_response_after_cancellation_does_not_touch_a_recycled_slot()
+    {
+        FrameDispatcher dispatcher = new(runContinuationsAsynchronously: true);
+        using CancellationTokenSource cancellation = new();
+        PendingCommand<IntResult> slot = dispatcher.Register<IntResult>(12);
+        slot.Registration = cancellation.Token.Register(
+            static state => ((PendingCommand)state!).Cancel(),
+            slot);
+        ValueTask<IntResult> pending = slot.AsValueTask();
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await pending);
+        Assert.Equal(0, dispatcher.PendingCount);
+
+        PendingCommand<IntResult> recycled = dispatcher.Register<IntResult>(13);
+        ValueTask<IntResult> next = recycled.AsValueTask();
+
+        dispatcher.Dispatch("""{"id":12,"result":{"value":99}}"""u8);
+        Assert.Equal(1, dispatcher.PendingCount);
+        Assert.False(next.IsCompleted);
+
+        dispatcher.Dispatch("""{"id":13,"result":{"value":5}}"""u8);
+        Assert.Equal(5, (await next).Value);
+    }
+
+    /// <summary>
     /// The T0 gate: dispatching a steady stream of events must not allocate.
     /// This is asserted in CI so the transport/dispatch path cannot regress silently.
     /// </summary>

@@ -280,6 +280,37 @@ page.DialogOpening += dialog => Console.WriteLine($"{dialog.Type}: {dialog.Messa
 await page.AcceptDialogAsync();
 ```
 
+### Tabs and page events
+
+`context.Pages` lists live tabs in creation order, and `browser.Browser.Pages` spans every context.
+`PageOpened` (with Playwright's `Page` alias) and `PageClosed` fire for tabs created through
+`NewPageAsync` as well as popups, and `WaitForPageAsync`/`RunAndWaitForPageAsync` resolve the next
+tab. `CloseAsync(PageCloseOptions)` can run the document's `beforeunload` hooks instead of closing
+the target outright.
+
+```csharp
+CdpPage first = await context.NewPageAsync("https://example.com");
+CdpPage second = await context.NewPageAsync("https://example.com/pricing");
+
+IReadOnlyList<CdpPage> tabs = context.Pages;
+IReadOnlyList<CdpPage> allTabs = browser.Browser.Pages;
+
+context.Page += opened => Console.WriteLine($"opened {opened.TargetId}");
+context.PageClosed += closed => Console.WriteLine($"closed {closed.TargetId}");
+
+// Wrap the action that opens a tab so a fast popup cannot be missed.
+CdpPage popup = await context.RunAndWaitForPageAsync(
+    () => first.Locator("#checkout").ClickAsync(),
+    page => page.MainFrame.Url.Contains("/checkout"));
+
+await second.BringToFrontAsync();
+await second.CloseAsync(new PageCloseOptions { RunBeforeUnload = true }); // may keep the tab open
+await first.CloseAsync();
+await browser.Browser.CloseAsync(); // closes every tab and context
+```
+
+`LaunchedBrowser.CloseAsync()` additionally shuts down the transport and the browser process.
+
 ### Contexts, storage, tracing, video
 
 Isolated browser contexts isolate cookies, cache and permissions. Context options are applied before

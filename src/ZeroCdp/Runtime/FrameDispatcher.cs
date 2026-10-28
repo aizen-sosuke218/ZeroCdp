@@ -74,7 +74,7 @@ internal sealed class FrameDispatcher
             }
 
             PendingCommand<T> slot = PendingCommand<T>.Rent(_runContinuationsAsynchronously);
-            slot.Prepare(id);
+            slot.Prepare(id, this);
             slot.Deadline = _commandTimeoutMs > 0
                 ? Environment.TickCount64 + _commandTimeoutMs
                 : 0;

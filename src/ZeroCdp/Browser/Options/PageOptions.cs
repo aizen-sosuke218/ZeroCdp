@@ -39,6 +39,16 @@ public sealed class PageWaitForNavigationOptions
     public TimeSpan? Timeout { get; init; }
 }
 
+/// <summary>Playwright-compatible options for <see cref="CdpPage.CloseAsync(PageCloseOptions, CancellationToken)"/>.</summary>
+public sealed class PageCloseOptions
+{
+    /// <summary>
+    /// Run the page's <c>beforeunload</c> hooks before closing. With a dialog subscriber
+    /// attached, dismissing the dialog keeps the page open, exactly like Playwright.
+    /// </summary>
+    public bool RunBeforeUnload { get; init; }
+}
+
 /// <summary>Options for <see cref="CdpPage.WaitForSelectorAsync(string, PageWaitForSelectorOptions, CancellationToken)"/>.</summary>
 public sealed class PageWaitForSelectorOptions
 {

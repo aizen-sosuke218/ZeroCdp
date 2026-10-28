@@ -305,6 +305,9 @@ public sealed partial class CdpBrowser
                 await page.EnsureRouteInterceptionAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            context.RaisePageOpened(page);
+            RaisePageOpened(page);
+
             if (deferNavigation)
             {
                 await page.GotoAsync(url, WaitUntil.Load, cancellationToken: cancellationToken)

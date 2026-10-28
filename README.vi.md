@@ -274,6 +274,37 @@ page.DialogOpening += dialog => Console.WriteLine($"{dialog.Type}: {dialog.Messa
 await page.AcceptDialogAsync();
 ```
 
+### Tab và sự kiện page
+
+`context.Pages` liệt kê các tab đang sống theo thứ tự tạo, còn `browser.Browser.Pages` gom mọi
+context. `PageOpened` (kèm alias `Page` như Playwright) và `PageClosed` nổ cho cả tab tạo bằng
+`NewPageAsync` lẫn popup; `WaitForPageAsync`/`RunAndWaitForPageAsync` chờ tab kế tiếp.
+`CloseAsync(PageCloseOptions)` có thể chạy hook `beforeunload` của document thay vì đóng target
+ngay.
+
+```csharp
+CdpPage first = await context.NewPageAsync("https://example.com");
+CdpPage second = await context.NewPageAsync("https://example.com/pricing");
+
+IReadOnlyList<CdpPage> tabs = context.Pages;
+IReadOnlyList<CdpPage> allTabs = browser.Browser.Pages;
+
+context.Page += opened => Console.WriteLine($"opened {opened.TargetId}");
+context.PageClosed += closed => Console.WriteLine($"closed {closed.TargetId}");
+
+// Bọc thao tác mở tab để không bỏ lỡ popup xuất hiện quá nhanh.
+CdpPage popup = await context.RunAndWaitForPageAsync(
+    () => first.Locator("#checkout").ClickAsync(),
+    page => page.MainFrame.Url.Contains("/checkout"));
+
+await second.BringToFrontAsync();
+await second.CloseAsync(new PageCloseOptions { RunBeforeUnload = true }); // tab có thể vẫn mở
+await first.CloseAsync();
+await browser.Browser.CloseAsync(); // đóng mọi tab và context
+```
+
+`LaunchedBrowser.CloseAsync()` đóng thêm transport và tiến trình browser.
+
 ### Context, storage, tracing, video
 
 Isolated browser context cô lập cookie, cache và permission. Options của context được áp dụng trước

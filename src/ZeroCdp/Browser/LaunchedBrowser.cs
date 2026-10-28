@@ -44,6 +44,12 @@ public sealed class LaunchedBrowser : IAsyncDisposable
 
     public string UserDataDirectory => _userDataDirectory;
 
+    /// <summary>
+    /// Playwright-style close: shuts down pages, the transport and the browser process. Same as
+    /// <see cref="DisposeAsync"/>.
+    /// </summary>
+    public ValueTask CloseAsync() => DisposeAsync();
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

@@ -147,8 +147,9 @@ public sealed partial class CdpBrowser : IAsyncDisposable
     }
 
     /// <summary>
-    /// Raised on the reader thread when a page is opened outside an explicit
-    /// <see cref="NewPageAsync"/> call, for example by <c>window.open</c>.
+    /// Raised when a page registers in this browser: pages created through <c>NewPageAsync</c> and
+    /// pages opened by the page itself, for example <c>window.open</c>. The page is present in
+    /// <see cref="Pages"/> by the time the handler runs.
     /// </summary>
     public event Action<CdpPage>? PageOpened
     {
@@ -244,6 +245,9 @@ public sealed partial class CdpBrowser : IAsyncDisposable
         BrowserNewPageOptions options,
         CancellationToken cancellationToken = default)
         => DefaultContext.NewPageAsync(url, options, cancellationToken);
+
+    /// <summary>Playwright-style browser close. Same effect as <see cref="DisposeAsync"/>.</summary>
+    public ValueTask CloseAsync() => DisposeAsync();
 
 
     private static string DecodeProductVersion(ReadOnlySpan<byte> productUtf8)
