@@ -140,6 +140,30 @@ public sealed class IsolatedWorldRuntime
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Evaluates <paramref name="expression"/> in the page's main world without serialising the
+    /// value, so the caller can keep the resulting object as a handle.
+    /// </summary>
+    public async ValueTask<EvaluationResult> EvaluateObjectMainWorldAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return await _session
+            .SendAsync<EvaluationResult, EvaluateParams>(
+                "Runtime.evaluate"u8,
+                EvaluateParams.MainWorld(expression, returnByValue: false),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the current isolated context id, creating the world when necessary. Node
+    /// resolution uses this so <c>DOM.resolveNode</c> produces an object in the isolated world.
+    /// </summary>
+    internal ValueTask<int> EnsureContextIdAsync(CancellationToken cancellationToken)
+        => EnsureContextAsync(cancellationToken);
+
     /// <summary>Calls a function on an object returned by a previous evaluation.</summary>
     public async ValueTask<EvaluationResult> CallFunctionOnObjectAsync(
         string objectId,
@@ -357,7 +381,7 @@ public sealed class IsolatedWorldRuntime
         }
     }
 
-    private static bool IsStaleContext(CdpCommandException exception)
+    internal static bool IsStaleContext(CdpCommandException exception)
         => exception.Message.Contains("Cannot find context with specified id", StringComparison.OrdinalIgnoreCase)
             || exception.Message.Contains("Execution context was destroyed", StringComparison.OrdinalIgnoreCase)
             || exception.Message.Contains("Inspected target navigated or closed", StringComparison.OrdinalIgnoreCase);

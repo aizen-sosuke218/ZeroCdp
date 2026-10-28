@@ -14,6 +14,18 @@ public enum ElementHandleState
     Editable = 5,
 }
 
+/// <summary>Options for <see cref="ElementHandle.WaitForSelectorAsync"/>.</summary>
+public sealed class ElementHandleWaitForSelectorOptions
+{
+    /// <summary>State the descendant must reach. Defaults to <see cref="WaitForSelectorState.Visible"/>.</summary>
+    public WaitForSelectorState State { get; init; } = WaitForSelectorState.Visible;
+
+    public TimeSpan? Timeout { get; init; }
+
+    /// <summary>Throw when more than one descendant matches. Currently informational.</summary>
+    public bool Strict { get; init; }
+}
+
 /// <summary>
 /// A handle to a DOM element. Unlike a selector, a handle keeps pointing at the same element until
 /// it is detached or disposed.
@@ -53,6 +65,140 @@ public sealed class ElementHandle : JSHandle
 
     protected override ValueTask EnsureResolvedAsync(CancellationToken cancellationToken)
         => EnsureObjectIdAsync(cancellationToken);
+
+    /// <summary>
+    /// Evaluates a function with this element as its argument in the isolated world by default.
+    /// The element is resolved again in the requested world, so switching worlds never reuses an
+    /// object id that belongs to the other world.
+    /// </summary>
+    public override ValueTask<EvaluationResult> EvaluateAsync(
+        string expression,
+        bool isolatedContext,
+        CancellationToken cancellationToken = default)
+        => Page.EvaluateOnNodeAsync(_nodeId, expression, isolatedContext, cancellationToken);
+
+    /// <summary>Evaluates a function with this element as its argument and keeps the result.</summary>
+    public override ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        bool isolatedContext,
+        CancellationToken cancellationToken = default)
+        => Page.EvaluateHandleOnNodeAsync(_nodeId, expression, isolatedContext, cancellationToken);
+
+    /// <summary>
+    /// Evaluates an expression with the first descendant matching <paramref name="selector"/> as
+    /// its argument. Evaluation is isolated by default.
+    /// </summary>
+    public async ValueTask<EvaluationResult> EvalOnSelectorAsync(
+        string selector,
+        string expression,
+        bool isolatedContext = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(selector);
+        ElementHandle? handle = await QuerySelectorAsync(selector, cancellationToken).ConfigureAwait(false);
+        if (handle is null)
+        {
+            throw new CdpException($"No element matches selector '{selector}'.");
+        }
+
+        try
+        {
+            return await handle.EvaluateAsync(expression, isolatedContext, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            await handle.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Calls a function with every descendant matching <paramref name="selector"/>. Evaluation is
+    /// isolated by default.
+    /// </summary>
+    public async ValueTask<EvaluationResult> EvalOnSelectorAllAsync(
+        string selector,
+        string expression,
+        bool isolatedContext = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(selector);
+        ArgumentNullException.ThrowIfNull(expression);
+        IReadOnlyList<ElementHandle> handles = await QuerySelectorAllAsync(selector, cancellationToken)
+            .ConfigureAwait(false);
+        long[] nodeIds = new long[handles.Count];
+        try
+        {
+            for (int i = 0; i < handles.Count; i++)
+            {
+                nodeIds[i] = handles[i].NodeId;
+            }
+
+            return await Page.EvaluateOnNodesAsync(nodeIds, expression, isolatedContext, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            foreach (ElementHandle handle in handles)
+            {
+                await handle.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Waits for a descendant matching <paramref name="selector"/> to reach a state.</summary>
+    public async ValueTask<ElementHandle?> WaitForSelectorAsync(
+        string selector,
+        ElementHandleWaitForSelectorOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(selector);
+        options ??= new ElementHandleWaitForSelectorOptions();
+        TimeSpan timeout = options.Timeout ?? TimeSpan.FromSeconds(30);
+        long start = Stopwatch.GetTimestamp();
+        WaitForState state = options.State.ToWaitForState();
+
+        while (true)
+        {
+            ElementHandle? handle = await QuerySelectorAsync(selector, cancellationToken).ConfigureAwait(false);
+            bool satisfied;
+            switch (state)
+            {
+                case WaitForState.Attached:
+                    satisfied = handle is not null;
+                    break;
+                case WaitForState.Detached:
+                    satisfied = handle is null;
+                    break;
+                case WaitForState.Hidden:
+                    satisfied = handle is null
+                        || !await handle.IsVisibleAsync(cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    satisfied = handle is not null
+                        && await handle.IsVisibleAsync(cancellationToken).ConfigureAwait(false);
+                    break;
+            }
+
+            if (satisfied)
+            {
+                return handle;
+            }
+
+            if (handle is not null)
+            {
+                await handle.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (Stopwatch.GetElapsedTime(start) >= timeout)
+            {
+                throw new CdpTimeoutException(
+                    $"Selector '{selector}' did not reach {state} within {timeout.TotalSeconds:0.##}s.");
+            }
+
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     internal async ValueTask<JSHandle?> QuerySelectorHandleAsync(
         string selector,

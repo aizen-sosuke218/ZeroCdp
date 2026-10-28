@@ -44,6 +44,17 @@ public sealed class AccessibilityNode
         return builder.ToString().TrimEnd('\n');
     }
 
+    /// <summary>
+    /// Serializes this subtree in the YAML shape used by Playwright's <c>ariaSnapshot</c>,
+    /// stopping after <paramref name="maxDepth"/> nested levels.
+    /// </summary>
+    public string ToYaml(int? maxDepth)
+    {
+        StringBuilder builder = new(128);
+        AppendYaml(builder, indent: 0, maxDepth);
+        return builder.ToString().TrimEnd('\n');
+    }
+
     /// <summary>Finds a descendant by role and, optionally, accessible name.</summary>
     public AccessibilityNode? Find(string role, string? name = null)
     {
@@ -65,13 +76,13 @@ public sealed class AccessibilityNode
         return null;
     }
 
-    private void AppendYaml(StringBuilder builder, int indent)
+    private void AppendYaml(StringBuilder builder, int indent, int? remainingDepth = null)
     {
         if (IsFlattenable)
         {
             foreach (AccessibilityNode child in Children)
             {
-                child.AppendYaml(builder, indent);
+                child.AppendYaml(builder, indent, remainingDepth);
             }
 
             return;
@@ -132,6 +143,12 @@ public sealed class AccessibilityNode
 
         builder.Append('\n');
 
+        if (remainingDepth is 0)
+        {
+            return;
+        }
+
+        int? childDepth = remainingDepth is null ? null : remainingDepth - 1;
         foreach (AccessibilityNode child in Children)
         {
             if (ShouldSkipTextChild(child))
@@ -139,7 +156,7 @@ public sealed class AccessibilityNode
                 continue;
             }
 
-            child.AppendYaml(builder, indent + 2);
+            child.AppendYaml(builder, indent + 2, childDepth);
         }
     }
 

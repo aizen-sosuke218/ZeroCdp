@@ -17,13 +17,15 @@ internal sealed class FrameContext
         string frameId,
         CdpSession session,
         IsolatedWorldRuntime world,
-        FrameContext? parent = null)
+        FrameContext? parent = null,
+        bool isOopif = false)
     {
         Id = id;
         FrameId = frameId;
         Session = session;
         World = world;
         Parent = parent;
+        IsOopif = isOopif;
     }
 
     public int Id { get; }
@@ -37,7 +39,11 @@ internal sealed class FrameContext
     /// <summary>Frame that owns this frame's iframe element; null for the main frame.</summary>
     public FrameContext? Parent { get; }
 
-    public bool IsOopif => Id != 0;
+    /// <summary>
+    /// True only for out-of-process iframes, which have their own target session and viewport.
+    /// Same-process iframes share the parent session but still carry a synthetic node-id range.
+    /// </summary>
+    public bool IsOopif { get; }
 }
 
 public sealed partial class CdpPage
@@ -193,15 +199,35 @@ public sealed partial class CdpPage
         return _mainFrameId;
     }
 
-    /// <summary>Returns the routing context for a frame id, creating one for an OOPIF on demand.</summary>
+    /// <summary>Returns the routing context for a frame id, creating one on demand.</summary>
+    /// <remarks>
+    /// Every non-main frame gets a synthetic node-id range, whether it is out-of-process or not.
+    /// The range is what lets a later action route an element back to the frame that owns it:
+    /// <c>DOM.describeNode</c> only reports <c>frameId</c> for frame-owner elements, so the owning
+    /// frame cannot be recovered from a node id alone.
+    /// </remarks>
     internal FrameContext GetFrameContext(string frameId)
     {
         ArgumentException.ThrowIfNullOrEmpty(frameId);
 
         if (string.Equals(frameId, _mainFrameId, StringComparison.Ordinal))
         {
-            return new FrameContext(0, frameId, Session, _isolated);
+            return MainFrameContext;
         }
+
+        lock (_oopifGate)
+        {
+            if (_frameContextsByFrame.TryGetValue(frameId, out FrameContext? existing))
+            {
+                return existing;
+            }
+        }
+
+        // The parent lookup takes the frame-tree lock, so it runs outside the routing lock.
+        string? parentFrameId = GetParentFrameIdForFrame(frameId);
+        FrameContext parent = parentFrameId is null
+            ? MainFrameContext
+            : GetFrameContext(parentFrameId);
 
         lock (_oopifGate)
         {
@@ -214,11 +240,19 @@ public sealed partial class CdpPage
             {
                 return CreateFrameContextLocked(frameId, child);
             }
-        }
 
-        // A same-process iframe is addressed through the parent session. It still needs its own
-        // isolated world, but its node ids and coordinates live in the parent viewport.
-        return new FrameContext(0, frameId, Session, GetSameProcessFrameRuntime(frameId));
+            return CreateSameProcessFrameContextLocked(frameId, parent);
+        }
+    }
+
+    private string? GetParentFrameIdForFrame(string frameId)
+    {
+        lock (_frameTreeGate)
+        {
+            return _framesById.TryGetValue(frameId, out Frame? frame)
+                ? frame.ParentFrame?.FrameId
+                : null;
+        }
     }
 
     private FrameContext CreateFrameContextLocked(string frameId, CdpSession session)
@@ -234,10 +268,25 @@ public sealed partial class CdpPage
         }
 
         parent ??= MainFrameContext;
-        FrameContext context = new(id, frameId, session, world, parent);
+        FrameContext context = new(id, frameId, session, world, parent, isOopif: true);
         _frameContextsByFrame[frameId] = context;
         _frameContextsById[id] = context;
         _frameContextsBySession[session.SessionId] = context;
+        return context;
+    }
+
+    /// <summary>
+    /// A frame that shares its parent's target session. It still gets a synthetic node-id range
+    /// so element handles can find their way back to the frame's own isolated world.
+    /// </summary>
+    private FrameContext CreateSameProcessFrameContextLocked(string frameId, FrameContext parent)
+    {
+        int id = _nextFrameContextId++;
+        IsolatedWorldRuntime world = new(parent.Session, WorldNameFactory.Create());
+        world.SetFrameId(frameId);
+        FrameContext context = new(id, frameId, parent.Session, world, parent);
+        _frameContextsByFrame[frameId] = context;
+        _frameContextsById[id] = context;
         return context;
     }
 
@@ -363,7 +412,7 @@ public sealed partial class CdpPage
         FrameContext context,
         CancellationToken cancellationToken)
     {
-        if (context.Id == 0)
+        if (!context.IsOopif)
         {
             return FrameTransform.Identity;
         }

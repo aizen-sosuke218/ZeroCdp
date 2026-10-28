@@ -177,6 +177,20 @@ public sealed partial class CdpPage
             .ConfigureAwait(false);
     }
 
+    /// <summary>Hides the DevTools highlight overlay for this page.</summary>
+    public async ValueTask HideHighlightAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+        if (Volatile.Read(ref _overlayEnabled) == 0)
+        {
+            return;
+        }
+
+        await Session
+            .SendAsync<Unit>("Overlay.hideHighlight"u8, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     internal ValueTask<string[]> SelectOptionsAsync(
         long nodeId,
         IReadOnlyList<string> values,

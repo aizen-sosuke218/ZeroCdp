@@ -144,7 +144,7 @@ public class PatchrightParityTests : IAsyncLifetime
         string endpoint = launched.WebSocketEndpoint ?? throw new InvalidOperationException("No endpoint.");
         Assert.StartsWith("ws://127.0.0.1:", endpoint, StringComparison.Ordinal);
 
-        await using CdpBrowser attached = await BrowserLauncher.ConnectOverCdpAsync(endpoint);
+        await using CdpBrowser attached = await BrowserLauncher.ConnectOverCDPAsync(endpoint);
         CdpPage page = await attached.NewPageAsync(server.Url("/attached"));
 
         Assert.Equal("attached page", await page.Locator("#marker").InnerTextAsync());

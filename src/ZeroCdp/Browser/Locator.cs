@@ -132,6 +132,32 @@ public sealed class LocatorAriaSnapshotOptions
 
     /// <summary>Drop ignored and presentational nodes, promoting their children. Defaults to true.</summary>
     public bool InterestingOnly { get; init; } = true;
+
+    /// <summary>Maximum number of nested levels to include. Null includes the whole subtree.</summary>
+    public int? Depth { get; init; }
+
+    /// <summary>
+    /// Snapshot mode. <see cref="AriaSnapshotMode.Ai"/> is accepted for API compatibility; this
+    /// implementation does not emit <c>[ref=...]</c> markers.
+    /// </summary>
+    public AriaSnapshotMode? Mode { get; init; }
+}
+
+/// <summary>Snapshot mode used by aria snapshots.</summary>
+public enum AriaSnapshotMode
+{
+    /// <summary>Playwright's default YAML snapshot.</summary>
+    Default = 0,
+
+    /// <summary>AI-oriented snapshot with refs. Accepted, but refs are not emitted.</summary>
+    Ai = 1,
+}
+
+/// <summary>Options for <see cref="Locator.WaitForFunctionAsync"/>.</summary>
+public sealed class LocatorWaitForFunctionOptions
+{
+    /// <summary>How long to poll before throwing. Null uses the locator timeout.</summary>
+    public TimeSpan? Timeout { get; init; }
 }
 
 /// <summary>Playwright-style options for <see cref="Locator.GetByRole(string, RoleOptions, TimeSpan?)"/>.</summary>
@@ -400,6 +426,60 @@ public sealed partial class Locator
         bool exact = false,
         TimeSpan? timeout = null)
         => GetByRole(role.ToRoleName(), name, exact, timeout);
+
+    /// <summary>
+    /// Returns a locator that matches this locator's elements inside each element matched by
+    /// <paramref name="parent"/>. Equivalent to <c>parent.Locator(this)</c>.
+    /// </summary>
+    public Locator Within(Locator parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        return parent.Locator(this);
+    }
+
+    /// <summary>
+    /// Polls <paramref name="expression"/> with the first matching element as its argument until
+    /// it returns a truthy value, re-resolving the locator on every retry. Evaluation is isolated
+    /// by default.
+    /// </summary>
+    public async ValueTask<JSHandle> WaitForFunctionAsync(
+        string expression,
+        LocatorWaitForFunctionOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        options ??= new LocatorWaitForFunctionOptions();
+        TimeSpan effective = EffectiveTimeout(options.Timeout);
+        long start = Stopwatch.GetTimestamp();
+
+        while (true)
+        {
+            long nodeId = await FindSingleAsync(cancellationToken).ConfigureAwait(false);
+            EvaluationResult result = await _page
+                .EvaluateOnNodeAsync(nodeId, expression, isolatedContext: true, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (result.Threw)
+            {
+                throw new CdpException(
+                    result.ExceptionSummary ?? "The wait expression threw in the page.");
+            }
+
+            if (CdpPage.IsTruthy(result.Value))
+            {
+                return _page.CreateValueHandle(result, nodeId);
+            }
+
+            if (Stopwatch.GetElapsedTime(start) >= effective)
+            {
+                throw new CdpTimeoutException(
+                    $"Expression '{expression}' did not become truthy for locator '{Selector}' " +
+                    $"within {effective.TotalSeconds:0.##}s.");
+            }
+
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     internal Locator CreateChild(string selector, bool pierceShadowDom, TimeSpan? timeout)
         => new(_page, selector, pierceShadowDom, _frame, timeout ?? Timeout, parent: this);

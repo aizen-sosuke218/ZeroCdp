@@ -24,7 +24,7 @@ và security-first.
 | P3 selector parity + Patchright parity | ✅ | XPath (kể cả closed shadow), text/id/data-testid/role engine, Filter/And/AllAsync, RoleOptions, hit-target + stable box, networkidle, keyboard/mouse, route fallback, context network helpers, ExposeFunction/ExposeBinding, AddInitScript kiểu Patchright, connectOverCDP; **179 test** |
 | P4 OOPIF + media/session mở rộng | ✅ | OOPIF cross-site và lồng nhau: page-level auto-attach, child-session routing, synthetic node id, affine transform; Playwright options/enums; sample thực tế chạy song song test suite; **181 test** |
 | P5 Playwright/Patchright parity | 🚧 | Checklist chi tiết ở §0.1. Đã xong Frame API lõi, strict locator mode, context defaults + AddInitScript, Page lifecycle/network events, Request/Response helpers, locator handlers, touch input, click options, per-page emulation, workers, highlight, security details, hover/tap/fill options, HAR recording/replay, accessibility/ARIA snapshot, Clock, storage state + IndexedDB, tracing recording, video, public CDP sessions, service workers; **211 test** (P6 bổ sung 11) |
-| P6 Gap-list parity | ✅ | Web-first assertions, JS/Element handles, standalone và context-bound `APIRequestContext`, coverage, option/context parity, HTTP auth, `routeWebSocket`, trace archive reader/viewer; **222 test** |
+| P6 Gap-list parity | ✅ | Web-first assertions, JS/Element handles, standalone và context-bound `APIRequestContext`, coverage, option/context parity, HTTP auth, `routeWebSocket`, trace archive reader/viewer; **250 test** |
 
 ### 0.1 Checklist Playwright/Patchright parity
 
@@ -292,6 +292,14 @@ Các mục Patchright không dùng hoặc không hỗ trợ được đánh dấ
   trước khi slot về pool nên response đến muộn không thể ghi đè command tái sử dụng. Có 2 test
   regression trong `FrameDispatcherTests`. Suite chạy 3 lần liên tiếp 237/237; AOT sample publish +
   chạy thật exit 0.
+- Patchright isolated-context mặc định + hoàn thiện bề mặt Playwright: mọi entry point evaluate
+  (`Page`, `Frame`, `Locator`, `JSHandle`/`ElementHandle`, `Worker`) chạy isolated world mặc định,
+  thêm overload `isolatedContext`; sửa iframe cùng tiến trình bằng synthetic node-id context và
+  resolve owner qua `backendNodeId`; thêm `EvalOnSelectorAsync`/`EvalOnSelectorAllAsync`,
+  `AriaSnapshotAsync`, `FrameByUrl`, `RequestsAsync`, `WaitForWorkerAsync`,
+  `Locator.WaitForFunctionAsync`/`Within`/nối chuỗi, `Route.FetchAsync` +
+  `FulfillAsync(APIResponse)`, `Download.CreateReadStreamAsync`, `Mouse.DblClickAsync`, CDP session
+  cấp browser; bỏ các bề mặt không thuộc Patchright. Tổng **250 test**, Chromium 250/250 pass.
 
 **Việc tối ưu còn lại đã biết**: scan JSON hiện là scalar (~1.5 ns/byte). Với frame lớn (>8 KB)
 viết lại bằng `Vector256` sẽ có lợi; với frame CDP thường gặp thì lợi ích nhỏ vì Chrome là nút cổ chai.
@@ -779,7 +787,7 @@ Khác biệt so với kế hoạch ban đầu ở §11.2–§11.4, và lý do:
   browser từ xa; `LaunchOptions.ProxyServer`/`ProxyBypassList` được thêm để flag
   `--webrtc-ip-handling-policy=disable_non_proxied_udp` có ngữ cảnh sử dụng thật.
 - **Test Chromium bắt buộc:** `scripts/test-chromium.sh` đặt `ZEROCDP_REQUIRE_BROWSER=1`; thiếu
-  browser là fail chứ không silent-skip. Toàn bộ **222 test** chạy thật trên chromium (P6 bổ sung 11 test).
+  browser là fail chứ không silent-skip. Toàn bộ **250 test** chạy thật trên chromium.
 
 ---
 
@@ -839,6 +847,6 @@ stealth mặc định. Toàn bộ API mới là additive; không có reflection,
 ### 12.3 Gate
 
 - `dotnet build ZeroCDP.slnx -c Release`: 0 warning, 0 error.
-- Chromium suite: **222/222 test pass**; T0 dispatch vẫn **0 B/op**.
+- Chromium suite: **250/250 test pass**; T0 dispatch vẫn **0 B/op**.
 - Các test mới bao phủ assertions, handles, APIRequestContext (kể cả cookie sharing hai chiều),
   coverage, Basic auth, option parity, mock/proxy/context WebSocket route và trace archive ZIP/thư mục.

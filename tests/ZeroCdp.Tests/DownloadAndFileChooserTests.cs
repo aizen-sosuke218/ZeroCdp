@@ -102,6 +102,12 @@ public sealed class DownloadAndFileChooserTests : IAsyncLifetime
         Assert.Equal("report.txt", await download.SuggestedFilenameAsync());
         Assert.EndsWith("/payload", await download.UrlAsync(), StringComparison.Ordinal);
 
+        await using (Stream stream = await download.CreateReadStreamAsync())
+        {
+            using StreamReader reader = new(stream);
+            Assert.Equal("downloaded payload", await reader.ReadToEndAsync());
+        }
+
         await download.CancelAsync();
         Assert.True(download.IsCompleted);
 

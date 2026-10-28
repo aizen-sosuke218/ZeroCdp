@@ -1,6 +1,8 @@
 using System.Text;
+using System.Text.Json;
 using ZeroCdp.Json;
 using ZeroCdp.Protocol;
+using ZeroCdp.Runtime;
 
 namespace ZeroCdp.Browser;
 
@@ -75,9 +77,66 @@ public sealed class PageRequest
     public ValueTask<IReadOnlyDictionary<string, string>> AllHeadersAsync()
         => ValueTask.FromResult<IReadOnlyDictionary<string, string>>(ToDictionary(Headers));
 
+    /// <summary>Every request header as name/value pairs, preserving order and duplicates.</summary>
+    public ValueTask<IReadOnlyList<CdpHeader>> HeadersArrayAsync()
+        => ValueTask.FromResult(Headers);
+
+    /// <summary>Value of the first header matching <paramref name="name"/>, or null.</summary>
+    public ValueTask<string?> HeaderValueAsync(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        foreach (CdpHeader header in Headers)
+        {
+            if (header.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return ValueTask.FromResult<string?>(header.Value);
+            }
+        }
+
+        return ValueTask.FromResult<string?>(null);
+    }
+
+    /// <summary>Every value of headers matching <paramref name="name"/>.</summary>
+    public ValueTask<IReadOnlyList<string>> HeaderValuesAsync(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        List<string> values = new();
+        foreach (CdpHeader header in Headers)
+        {
+            if (header.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                values.Add(header.Value);
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<string>>(values);
+    }
+
     /// <summary>Request body as a UTF-8 buffer, or an empty buffer when there is no body.</summary>
     public ValueTask<byte[]> PostDataBufferAsync()
         => ValueTask.FromResult(PostData is null ? Array.Empty<byte>() : Encoding.UTF8.GetBytes(PostData));
+
+    /// <summary>Request body as a UTF-8 buffer, or an empty buffer when there is no body.</summary>
+    public byte[] PostDataBuffer => PostData is null ? Array.Empty<byte>() : Encoding.UTF8.GetBytes(PostData);
+
+    /// <summary>Request body parsed as JSON, or null when there is no body or it is not JSON.</summary>
+    public JsonElement? PostDataJSON()
+    {
+        if (string.IsNullOrEmpty(PostData))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(PostData);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static Dictionary<string, string> ToDictionary(IReadOnlyList<CdpHeader> headers)
     {
@@ -147,6 +206,9 @@ public sealed class PageResponse
     /// <summary>The request that produced this response.</summary>
     public PageRequest? Request { get; internal set; }
 
+    /// <summary>Session that observed the response; used to read the body on demand.</summary>
+    internal CdpSession? Session { get; set; }
+
     public IReadOnlyList<CdpHeader> Headers { get; init; } = Array.Empty<CdpHeader>();
 
     /// <summary>HTTP protocol reported by Chromium, for example <c>h2</c>.</summary>
@@ -213,6 +275,82 @@ public sealed class PageResponse
     /// <summary>Playwright-style alias for all response headers.</summary>
     public ValueTask<IReadOnlyDictionary<string, string>> AllHeadersAsync()
         => ValueTask.FromResult<IReadOnlyDictionary<string, string>>(ToDictionary(Headers));
+
+    /// <summary>Every response header as name/value pairs, preserving order and duplicates.</summary>
+    public ValueTask<IReadOnlyList<CdpHeader>> HeadersArrayAsync()
+        => ValueTask.FromResult(Headers);
+
+    /// <summary>Value of the first header matching <paramref name="name"/>, or null.</summary>
+    public ValueTask<string?> HeaderValueAsync(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        foreach (CdpHeader header in Headers)
+        {
+            if (header.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return ValueTask.FromResult<string?>(header.Value);
+            }
+        }
+
+        return ValueTask.FromResult<string?>(null);
+    }
+
+    /// <summary>Every value of headers matching <paramref name="name"/>.</summary>
+    public ValueTask<IReadOnlyList<string>> HeaderValuesAsync(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        List<string> values = new();
+        foreach (CdpHeader header in Headers)
+        {
+            if (header.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                values.Add(header.Value);
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<string>>(values);
+    }
+
+    /// <summary>HTTP version reported for the response, for example <c>h2</c>.</summary>
+    public ValueTask<string> HttpVersionAsync() => ValueTask.FromResult(Protocol);
+
+    /// <summary>TLS details reported for the response, or null.</summary>
+    public ValueTask<SecurityDetails?> SecurityDetailsAsync()
+        => ValueTask.FromResult(SecurityDetails);
+
+    /// <summary>Reads the response body from the page's network stack.</summary>
+    public async ValueTask<byte[]> BodyAsync(CancellationToken cancellationToken = default)
+    {
+        CdpSession session = Session
+            ?? throw new CdpException("The response is not attached to a live page session.");
+        ResponseBodyResult result = await session
+            .SendAsync<ResponseBodyResult, GetResponseBodyParams>(
+                "Network.getResponseBody"u8,
+                new GetResponseBodyParams(RequestId),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return result.Base64Encoded
+            ? Convert.FromBase64String(result.Body)
+            : Encoding.UTF8.GetBytes(result.Body);
+    }
+
+    /// <summary>Reads the response body as UTF-8 text.</summary>
+    public async ValueTask<string> TextAsync(CancellationToken cancellationToken = default)
+        => Encoding.UTF8.GetString(await BodyAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>Reads the response body and parses it as JSON, or null for an empty body.</summary>
+    public async ValueTask<JsonElement?> JsonAsync(CancellationToken cancellationToken = default)
+    {
+        byte[] body = await BodyAsync(cancellationToken).ConfigureAwait(false);
+        if (body.Length == 0)
+        {
+            return null;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(body);
+        return document.RootElement.Clone();
+    }
 
     private static Dictionary<string, string> ToDictionary(IReadOnlyList<CdpHeader> headers)
     {

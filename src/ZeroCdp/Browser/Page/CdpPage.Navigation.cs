@@ -260,9 +260,28 @@ public sealed partial class CdpPage
     private void InvalidateWorlds()
     {
         _isolated.Invalidate();
-        lock (_frameWorldsGate)
+
+        // Same-process frames share this session but each owns an isolated world and a synthetic
+        // node-id range. A main-frame commit destroys all of them.
+        List<FrameContext> removed = new();
+        lock (_oopifGate)
         {
-            _frameWorlds.Clear();
+            foreach ((string frameId, FrameContext context) in _frameContextsByFrame.ToArray())
+            {
+                if (context.IsOopif)
+                {
+                    continue;
+                }
+
+                _frameContextsByFrame.Remove(frameId);
+                _frameContextsById.Remove(context.Id);
+                removed.Add(context);
+            }
+        }
+
+        foreach (FrameContext context in removed)
+        {
+            context.World.Invalidate();
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using ZeroCdp.Json;
 using ZeroCdp.Protocol;
 using ZeroCdp.Runtime;
@@ -115,6 +116,18 @@ public sealed partial class CdpPage
         }
     }
 
+    /// <summary>The page's current main-frame URL, or an empty string before the frame tree loads.</summary>
+    public string Url
+    {
+        get
+        {
+            lock (_frameTreeGate)
+            {
+                return _mainFrame?.Url ?? string.Empty;
+            }
+        }
+    }
+
     /// <summary>Finds a frame by its name or by its exact URL.</summary>
     public Frame? Frame(string nameOrUrl)
     {
@@ -133,6 +146,43 @@ public sealed partial class CdpPage
             foreach (Frame frame in _framesInOrder)
             {
                 if (!frame.IsDetached && frame.Url.Equals(nameOrUrl, StringComparison.Ordinal))
+                {
+                    return frame;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Finds a frame whose URL matches a Playwright glob pattern.</summary>
+    public Frame? FrameByUrl(string url)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(url);
+        return FindFrameByUrl(frame => UrlGlob.IsMatch(url, frame.Url));
+    }
+
+    /// <summary>Finds a frame whose URL matches <paramref name="url"/>.</summary>
+    public Frame? FrameByUrl(Regex url)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        return FindFrameByUrl(frame => url.IsMatch(frame.Url));
+    }
+
+    /// <summary>Finds a frame whose URL satisfies <paramref name="url"/>.</summary>
+    public Frame? FrameByUrl(Func<string, bool> url)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        return FindFrameByUrl(frame => url(frame.Url));
+    }
+
+    private Frame? FindFrameByUrl(Func<Frame, bool> predicate)
+    {
+        lock (_frameTreeGate)
+        {
+            foreach (Frame frame in _framesInOrder)
+            {
+                if (!frame.IsDetached && predicate(frame))
                 {
                     return frame;
                 }
@@ -367,8 +417,27 @@ public sealed partial class CdpPage
 
         foreach (Frame frame in detached)
         {
+            RemoveSameProcessFrameContext(frame.FrameId);
             RaiseFrameDetached(frame);
         }
+    }
+
+    /// <summary>Drops the synthetic routing context for a same-process frame that went away.</summary>
+    private void RemoveSameProcessFrameContext(string frameId)
+    {
+        FrameContext? removed = null;
+        lock (_oopifGate)
+        {
+            if (_frameContextsByFrame.TryGetValue(frameId, out FrameContext? context)
+                && !context.IsOopif)
+            {
+                _frameContextsByFrame.Remove(frameId);
+                _frameContextsById.Remove(context.Id);
+                removed = context;
+            }
+        }
+
+        removed?.World.Invalidate();
     }
 
     private void CollectDetachedLocked(Frame frame, List<Frame> detached)

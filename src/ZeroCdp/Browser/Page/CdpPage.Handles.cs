@@ -8,16 +8,28 @@ public sealed partial class CdpPage
     /// Evaluates an expression and returns a handle to the resulting JavaScript object. The
     /// Runtime domain is not enabled; the object lives in the isolated world.
     /// </summary>
+    public ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateHandleAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates an expression and returns a handle to the resulting JavaScript object. Handles
+    /// live in the isolated world by default; pass <paramref name="isolatedContext"/> false to
+    /// create one in the page's main world.
+    /// </summary>
     public async ValueTask<JSHandle> EvaluateHandleAsync(
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
         await EnableAsync(cancellationToken).ConfigureAwait(false);
-        EvaluationResult result = await _isolated.EvaluateObjectAsync(expression, cancellationToken)
-            .ConfigureAwait(false);
-        return CreateHandle(result, contextId: 0);
+        EvaluationResult result = isolatedContext
+            ? await _isolated.EvaluateObjectAsync(expression, cancellationToken).ConfigureAwait(false)
+            : await _isolated.EvaluateObjectMainWorldAsync(expression, cancellationToken).ConfigureAwait(false);
+        return CreateValueHandle(result, contextId: 0);
     }
 
     internal JSHandle CreateHandle(EvaluationResult result, int contextId)
@@ -37,16 +49,44 @@ public sealed partial class CdpPage
     }
 
     /// <summary>
+    /// Wraps an evaluation result in a handle, allowing primitive values. The node id selects the
+    /// frame context so later calls on an object handle route to the correct session.
+    /// </summary>
+    internal JSHandle CreateValueHandle(EvaluationResult result, long nodeId)
+        => CreateValueHandle(result, ContextForNode(nodeId).Id);
+
+    /// <summary>Wraps an evaluation result in a handle, allowing primitive values.</summary>
+    internal JSHandle CreateValueHandle(EvaluationResult result, int contextId)
+    {
+        if (result.Threw)
+        {
+            throw new CdpException(result.ExceptionSummary ?? "The JavaScript expression threw.");
+        }
+
+        return string.IsNullOrEmpty(result.Value.ObjectId)
+            ? JSHandle.FromResult(this, result, contextId)
+            : new JSHandle(this, result.Value.ObjectId, contextId, result.Value.Description);
+    }
+
+    /// <summary>
     /// Evaluates an expression with an element as <c>this</c> and keeps the result as a handle.
     /// </summary>
+    internal ValueTask<JSHandle> EvaluateHandleOnNodeAsync(
+        long nodeId,
+        string expression,
+        CancellationToken cancellationToken)
+        => EvaluateHandleOnNodeAsync(nodeId, expression, isolatedContext: true, cancellationToken);
+
     internal async ValueTask<JSHandle> EvaluateHandleOnNodeAsync(
         long nodeId,
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(expression);
         FrameContext context = ContextForNode(nodeId);
-        ResolveNodeResult resolved = await ResolveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
+        ResolveNodeResult resolved = await ResolveNodeAsync(nodeId, isolatedContext, cancellationToken)
+            .ConfigureAwait(false);
         string function = "function() { const fn = (" + expression + "); return typeof fn === 'function' ? fn(this) : fn; }";
 
         EvaluationResult result = await context.World

@@ -838,29 +838,18 @@ public sealed partial class Locator
     /// Evaluates an expression with the first match as <c>this</c>. A function expression is
     /// called with the element as its argument.
     /// </summary>
-    public async ValueTask<EvaluationResult> EvaluateAsync(
+    public ValueTask<EvaluationResult> EvaluateAsync(
         string expression,
         CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(expression);
-
-        long nodeId = await WaitForActionAsync(
-                requireVisible: false,
-                requireEnabled: false,
-                requireEditable: false,
-                requirement: "attached",
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        return await _page.EvaluateOnNodeAsync(nodeId, expression, cancellationToken).ConfigureAwait(false);
-    }
+        => EvaluateAsync(expression, isolatedContext: true, cancellationToken);
 
     /// <summary>
-    /// Evaluates an expression with the first match as <c>this</c> and returns a handle to the
-    /// result. A function expression is called with the element as its argument.
+    /// Evaluates an expression with the first match as <c>this</c>. Evaluation is isolated by
+    /// default; pass <paramref name="isolatedContext"/> false for the frame's main world.
     /// </summary>
-    public async ValueTask<JSHandle> EvaluateHandleAsync(
+    public async ValueTask<EvaluationResult> EvaluateAsync(
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);
@@ -874,7 +863,40 @@ public sealed partial class Locator
             .ConfigureAwait(false);
 
         return await _page
-            .EvaluateHandleOnNodeAsync(nodeId, expression, cancellationToken)
+            .EvaluateOnNodeAsync(nodeId, expression, isolatedContext, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Evaluates an expression with the first match as <c>this</c> and returns a handle to the
+    /// result. A function expression is called with the element as its argument.
+    /// </summary>
+    public ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateHandleAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates an expression with the first match as <c>this</c> and returns a handle to the
+    /// result. Evaluation is isolated by default.
+    /// </summary>
+    public async ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        bool isolatedContext,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        long nodeId = await WaitForActionAsync(
+                requireVisible: false,
+                requireEnabled: false,
+                requireEditable: false,
+                requirement: "attached",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return await _page
+            .EvaluateHandleOnNodeAsync(nodeId, expression, isolatedContext, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -882,15 +904,29 @@ public sealed partial class Locator
     /// Calls a function with an array of all matching elements. The function is evaluated in the
     /// frame's isolated world and receives the elements as its first argument.
     /// </summary>
+    public ValueTask<EvaluationResult> EvaluateAllAsync(
+        string functionDeclaration,
+        CancellationToken cancellationToken = default)
+        => EvaluateAllAsync(functionDeclaration, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Calls a function with an array of all matching elements. Evaluation is isolated by default.
+    /// </summary>
     public async ValueTask<EvaluationResult> EvaluateAllAsync(
         string functionDeclaration,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(functionDeclaration);
         long[] nodes = ApplyIndex(await ResolveAsync(cancellationToken).ConfigureAwait(false));
-        return await _page.EvaluateOnNodesAsync(nodes, functionDeclaration, cancellationToken)
+        return await _page
+            .EvaluateOnNodesAsync(nodes, functionDeclaration, isolatedContext, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>Hides the DevTools highlight overlay for this page.</summary>
+    public ValueTask HideHighlightAsync(CancellationToken cancellationToken = default)
+        => _page.HideHighlightAsync(cancellationToken);
 
     /// <summary>Text content of the first match (<c>textContent</c>, not rendered text).</summary>
 

@@ -158,14 +158,22 @@ public sealed partial class CdpPage
         return result.Value.TryGetBoolean(out bool dispatched) && dispatched;
     }
 
+    internal ValueTask<EvaluationResult> EvaluateOnNodeAsync(
+        long nodeId,
+        string expression,
+        CancellationToken cancellationToken)
+        => EvaluateOnNodeAsync(nodeId, expression, isolatedContext: true, cancellationToken);
+
     internal async ValueTask<EvaluationResult> EvaluateOnNodeAsync(
         long nodeId,
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(expression);
         FrameContext context = ContextForNode(nodeId);
-        ResolveNodeResult resolved = await ResolveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
+        ResolveNodeResult resolved = await ResolveNodeAsync(nodeId, isolatedContext, cancellationToken)
+            .ConfigureAwait(false);
         string function = "function() { const fn = (" + expression + "); return typeof fn === 'function' ? fn(this) : fn; }";
 
         EvaluationResult result = await context.World
@@ -180,15 +188,60 @@ public sealed partial class CdpPage
         return result;
     }
 
-    private async ValueTask<ResolveNodeResult> ResolveNodeAsync(
+    private ValueTask<ResolveNodeResult> ResolveNodeAsync(
         long nodeId,
         CancellationToken cancellationToken)
+        => ResolveNodeAsync(nodeId, isolatedContext: true, cancellationToken);
+
+    private async ValueTask<ResolveNodeResult> ResolveNodeAsync(
+        long nodeId,
+        bool isolatedContext,
+        CancellationToken cancellationToken)
     {
+        if (!isolatedContext)
+        {
+            // No executionContextId means the node's own frame main world, which is exactly the
+            // Patchright-compatible opt-in. This also covers same-process iframes.
+            return await ResolveNodeCoreAsync(
+                    ContextForNode(nodeId),
+                    nodeId,
+                    executionContextId: 0,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         FrameContext context = ContextForNode(nodeId);
+        int executionContextId = await context.World
+            .EnsureContextIdAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            return await ResolveNodeCoreAsync(context, nodeId, executionContextId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (CdpCommandException ex) when (IsolatedWorldRuntime.IsStaleContext(ex))
+        {
+            // A navigation destroyed the cached world between context creation and resolution.
+            context.World.Invalidate();
+            int retryContextId = await context.World
+                .EnsureContextIdAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return await ResolveNodeCoreAsync(context, nodeId, retryContextId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async ValueTask<ResolveNodeResult> ResolveNodeCoreAsync(
+        FrameContext context,
+        long nodeId,
+        int executionContextId,
+        CancellationToken cancellationToken)
+    {
         ResolveNodeResult resolved = await context.Session
             .SendAsync<ResolveNodeResult, ResolveNodeParams>(
                 "DOM.resolveNode"u8,
-                new ResolveNodeParams(RealNodeId(nodeId)),
+                new ResolveNodeParams(RealNodeId(nodeId), executionContextId),
                 cancellationToken)
             .ConfigureAwait(false);
 

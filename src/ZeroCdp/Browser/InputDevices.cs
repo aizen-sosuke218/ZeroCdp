@@ -104,6 +104,15 @@ public sealed class Mouse
             .ConfigureAwait(false);
     }
 
+    /// <summary>Moves to a point and performs a double click there.</summary>
+    public ValueTask DblClickAsync(
+        double x,
+        double y,
+        MouseButton button = MouseButton.Left,
+        TimeSpan? delay = null,
+        CancellationToken cancellationToken = default)
+        => ClickAsync(x, y, button, clickCount: 2, delay, cancellationToken);
+
     /// <summary>Scrolls at the current pointer position.</summary>
     public ValueTask WheelAsync(
         double deltaX,

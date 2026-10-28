@@ -453,29 +453,209 @@ public sealed class Frame
             : Locator(selector).SetCheckedAsync(checkedState, options, cancellationToken);
 
     /// <summary>Evaluates JavaScript in this frame's isolated world.</summary>
+    public ValueTask<EvaluationResult> EvaluateAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates JavaScript in this frame. Evaluation is isolated by default; pass
+    /// <paramref name="isolatedContext"/> false to run in the frame's main world.
+    /// </summary>
     public async ValueTask<EvaluationResult> EvaluateAsync(
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);
         string frameId = await ResolveFrameIdAsync(cancellationToken).ConfigureAwait(false);
-        return await _page.GetFrameRuntime(frameId)
-            .EvaluateAsync(expression, cancellationToken)
+        return await _page
+            .EvaluateInFrameAsync(
+                frameId,
+                expression,
+                isolatedContext,
+                returnByValue: true,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
     /// <summary>Evaluates an expression and returns a handle to the resulting JavaScript object.</summary>
+    public ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateHandleAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates an expression and returns a handle to the result. Evaluation is isolated by
+    /// default; pass <paramref name="isolatedContext"/> false for the frame's main world.
+    /// </summary>
     public async ValueTask<JSHandle> EvaluateHandleAsync(
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);
         string frameId = await ResolveFrameIdAsync(cancellationToken).ConfigureAwait(false);
         FrameContext context = _page.GetFrameContext(frameId);
-        EvaluationResult result = await context.World
-            .EvaluateObjectAsync(expression, cancellationToken)
+        EvaluationResult result = await _page
+            .EvaluateInFrameAsync(
+                frameId,
+                expression,
+                isolatedContext,
+                returnByValue: false,
+                cancellationToken)
             .ConfigureAwait(false);
-        return _page.CreateHandle(result, context.Id);
+        return _page.CreateValueHandle(result, context.Id);
+    }
+
+    /// <summary>
+    /// Evaluates <paramref name="expression"/> with the first descendant matching
+    /// <paramref name="selector"/> as its argument. Evaluation is isolated by default.
+    /// </summary>
+    public async ValueTask<EvaluationResult> EvalOnSelectorAsync(
+        string selector,
+        string expression,
+        FrameEvalOnSelectorOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(selector);
+        ArgumentNullException.ThrowIfNull(expression);
+
+        bool strict = options?.Strict ?? false;
+        Locator locator = Locator(selector);
+        if (!strict)
+        {
+            return await locator
+                .First()
+                .EvaluateAsync(expression, isolatedContext: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!_page.StrictSelectors)
+        {
+            long[] nodes = await locator.ResolveAsync(cancellationToken).ConfigureAwait(false);
+            if (nodes.Length > 1)
+            {
+                throw new CdpStrictModeException(selector, nodes.Length);
+            }
+
+            if (nodes.Length == 0)
+            {
+                throw new ElementNotFoundException(selector);
+            }
+
+            return await _page
+                .EvaluateOnNodeAsync(nodes[0], expression, isolatedContext: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await locator
+            .EvaluateAsync(expression, isolatedContext: true, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Calls <paramref name="expression"/> with every descendant matching
+    /// <paramref name="selector"/> as an array argument. Evaluation is isolated by default.
+    /// </summary>
+    public ValueTask<EvaluationResult> EvalOnSelectorAllAsync(
+        string selector,
+        string expression,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(selector);
+        ArgumentNullException.ThrowIfNull(expression);
+        return Locator(selector).EvaluateAllAsync(expression, isolatedContext: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits for this frame to commit a navigation. Call this before the action that navigates,
+    /// or use <see cref="RunAndWaitForNavigationAsync"/>.
+    /// </summary>
+    /// <returns>The committed URL.</returns>
+    public async ValueTask<string> WaitForNavigationAsync(
+        FrameWaitForNavigationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        options ??= new FrameWaitForNavigationOptions();
+        string frameId = await ResolveFrameIdAsync(cancellationToken).ConfigureAwait(false);
+        TimeSpan effectiveTimeout = options.Timeout ?? _page.DefaultNavigationTimeout;
+
+        TaskCompletionSource<string> completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Handler(Frame frame)
+        {
+            if (frame.FrameId.Equals(frameId, StringComparison.Ordinal)
+                && MatchesNavigation(options, frame.Url))
+            {
+                completion.TrySetResult(frame.Url);
+            }
+        }
+
+        _page.FrameNavigated += Handler;
+        try
+        {
+            string url = await completion.Task
+                .WaitAsync(effectiveTimeout, cancellationToken)
+                .ConfigureAwait(false);
+
+            WaitUntil waitUntil = options.WaitUntil?.ToWaitUntil() ?? WaitUntil.Load;
+            if (waitUntil != WaitUntil.Commit)
+            {
+                await WaitForLoadStateAsync(waitUntil, effectiveTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return url;
+        }
+        catch (TimeoutException)
+        {
+            throw new CdpTimeoutException(
+                $"Frame '{frameId}' did not commit a matching navigation within " +
+                $"{effectiveTimeout.TotalSeconds:0.##}s.");
+        }
+        finally
+        {
+            _page.FrameNavigated -= Handler;
+        }
+    }
+
+    /// <summary>Runs an action and returns the URL of the navigation it triggers in this frame.</summary>
+    public async ValueTask<string> RunAndWaitForNavigationAsync(
+        Func<ValueTask> action,
+        FrameRunAndWaitForNavigationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        options ??= new FrameRunAndWaitForNavigationOptions();
+        ValueTask<string> waiting = WaitForNavigationAsync(
+            new FrameWaitForNavigationOptions
+            {
+                Url = options.Url,
+                UrlRegex = options.UrlRegex,
+                UrlFunc = options.UrlFunc,
+                WaitUntil = options.WaitUntil,
+                Timeout = options.Timeout,
+            },
+            cancellationToken);
+
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
+    }
+
+    private static bool MatchesNavigation(FrameWaitForNavigationOptions options, string url)
+    {
+        if (options.UrlFunc is not null)
+        {
+            return options.UrlFunc(url);
+        }
+
+        if (options.UrlRegex is not null)
+        {
+            return options.UrlRegex.IsMatch(url);
+        }
+
+        return options.Url is null || UrlGlob.IsMatch(options.Url, url);
     }
 
     /// <summary>Serialized document markup for this frame.</summary>

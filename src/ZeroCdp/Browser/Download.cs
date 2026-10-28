@@ -122,6 +122,22 @@ public sealed class Download
         return Path;
     }
 
+    /// <summary>
+    /// Waits for completion and opens the downloaded file for reading. The caller owns the
+    /// returned stream.
+    /// </summary>
+    public async ValueTask<Stream> CreateReadStreamAsync(CancellationToken cancellationToken = default)
+    {
+        await WaitForCompletionAsync(timeout: null, cancellationToken).ConfigureAwait(false);
+        return new FileStream(
+            Path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            useAsync: true);
+    }
+
     /// <summary>Playwright-style async accessor for <see cref="Url"/>.</summary>
     public ValueTask<string> UrlAsync() => ValueTask.FromResult(Url);
 

@@ -4,7 +4,7 @@
     <RootNamespace>ZeroCdp</RootNamespace>
     <AssemblyName>ZeroCdp</AssemblyName>
     <PackageId>ZeroCdp</PackageId>
-    <Version>0.1.0-alpha</Version>
+    <Version>0.2.0-alpha</Version>
     <Description>Zero-allocation, NativeAOT-friendly Chrome DevTools Protocol client for .NET.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

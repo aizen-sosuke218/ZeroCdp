@@ -289,7 +289,7 @@ public class ActionabilityAndInputTests : IAsyncLifetime
         await using BrowserContext context = await browser.Browser.NewContextAsync();
         CdpPage page = await context.NewPageAsync();
 
-        await context.SetExtraHttpHeadersAsync([new CdpHeader("x-zerocdp", "yes")]);
+        await context.SetExtraHTTPHeadersAsync([new CdpHeader("x-zerocdp", "yes")]);
         await page.GotoAsync(server.Url("/headers"));
         Assert.Contains(
             server.Requests,

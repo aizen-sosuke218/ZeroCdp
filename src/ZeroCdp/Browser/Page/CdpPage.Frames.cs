@@ -92,7 +92,7 @@ public sealed partial class CdpPage
         }
 
         FrameContext self = GetFrameContext(frameId);
-        FrameContext parent = self.Id == 0 ? MainFrameContext : self.Parent ?? MainFrameContext;
+        FrameContext parent = self.Parent ?? MainFrameContext;
 
         FrameOwnerResult owner = await parent.Session
             .SendAsync<FrameOwnerResult, GetFrameOwnerParams>(
@@ -123,42 +123,7 @@ public sealed partial class CdpPage
     }
 
     internal IsolatedWorldRuntime GetFrameRuntime(string frameId)
-    {
-        if (string.Equals(frameId, _mainFrameId, StringComparison.Ordinal))
-        {
-            return _isolated;
-        }
-
-        lock (_oopifGate)
-        {
-            if (_frameContextsByFrame.TryGetValue(frameId, out FrameContext? context))
-            {
-                return context.World;
-            }
-
-            if (_childSessionsByFrame.TryGetValue(frameId, out CdpSession? child))
-            {
-                return CreateFrameContextLocked(frameId, child).World;
-            }
-        }
-
-        return GetSameProcessFrameRuntime(frameId);
-    }
-
-    private IsolatedWorldRuntime GetSameProcessFrameRuntime(string frameId)
-    {
-        lock (_frameWorldsGate)
-        {
-            if (!_frameWorlds.TryGetValue(frameId, out IsolatedWorldRuntime? runtime))
-            {
-                runtime = new IsolatedWorldRuntime(Session, WorldNameFactory.Create());
-                runtime.SetFrameId(frameId);
-                _frameWorlds[frameId] = runtime;
-            }
-
-            return runtime;
-        }
-    }
+        => GetFrameContext(frameId).World;
 
     private static async ValueTask<long> QueryFrameNodeAsync(
         IsolatedWorldRuntime world,

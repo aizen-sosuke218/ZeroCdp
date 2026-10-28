@@ -37,6 +37,13 @@ public sealed class CdpSession
         ParentSessionId = parentSessionId;
     }
 
+    /// <summary>
+    /// Creates a browser-level session. Commands sent through it carry no session id, which is
+    /// exactly how the browser endpoint is addressed over CDP.
+    /// </summary>
+    internal static CdpSession CreateBrowserSession(CdpConnection connection)
+        => new(connection, ReadOnlySpan<byte>.Empty, targetId: string.Empty, targetType: "browser");
+
     public string SessionId { get; }
 
     public string TargetId { get; }
@@ -78,7 +85,16 @@ public sealed class CdpSession
 
     /// <summary>Detaches this session from its target.</summary>
     public ValueTask DetachAsync(CancellationToken cancellationToken = default)
-        => _connection.DetachSessionAsync(_sessionIdUtf8, cancellationToken);
+    {
+        if (_sessionIdUtf8.Length == 0)
+        {
+            // Browser-level sessions are the root connection; there is nothing to detach.
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        return _connection.DetachSessionAsync(_sessionIdUtf8, cancellationToken);
+    }
 
     internal void Dispatch(ReadOnlySpan<byte> methodUtf8, ReadOnlySpan<byte> paramsUtf8)
         => EventSink?.OnEvent(_sessionIdUtf8, methodUtf8, paramsUtf8);

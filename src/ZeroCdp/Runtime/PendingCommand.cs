@@ -87,7 +87,8 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
         }
 
         _core.SetException(new CdpProtocolException(
-            $"The browser returned a result for command {Id} that did not match {typeof(T).Name}."));
+            $"The browser returned a result for command {Id} that did not match {typeof(T).Name}. " +
+            $"Result: {Preview(resultUtf8)}"));
     }
 
     public override void Fail(int code, string message, string? errorData)
@@ -134,6 +135,14 @@ internal sealed class PendingCommand<T> : PendingCommand, IValueTaskSource<T>, I
     /// process down.
     /// </summary>
     private bool TryComplete() => Interlocked.Exchange(ref _completed, 1) == 0;
+
+    private static string Preview(ReadOnlySpan<byte> resultUtf8)
+    {
+        const int Max = 512;
+        int length = Math.Min(resultUtf8.Length, Max);
+        string text = System.Text.Encoding.UTF8.GetString(resultUtf8[..length]);
+        return resultUtf8.Length > Max ? text + "…" : text;
+    }
 
     T IValueTaskSource<T>.GetResult(short token)
     {

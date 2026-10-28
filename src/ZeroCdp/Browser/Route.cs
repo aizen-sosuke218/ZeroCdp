@@ -4,6 +4,31 @@ using ZeroCdp.Protocol;
 namespace ZeroCdp.Browser;
 
 
+/// <summary>Options for <see cref="Route.FetchAsync"/>.</summary>
+public sealed class RouteFetchOptions
+{
+    /// <summary>Headers to override on the fetched request. The paused request headers are kept.</summary>
+    public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
+    /// <summary>Maximum redirects to follow. Null uses the HTTP client default.</summary>
+    public int? MaxRedirects { get; init; }
+
+    /// <summary>Extra attempts after a transport failure.</summary>
+    public int? MaxRetries { get; init; }
+
+    /// <summary>HTTP method override, for example <c>POST</c>.</summary>
+    public string? Method { get; init; }
+
+    /// <summary>Request body override. Defaults to the paused request body.</summary>
+    public string? PostData { get; init; }
+
+    /// <summary>Request timeout. Null uses the context default.</summary>
+    public TimeSpan? Timeout { get; init; }
+
+    /// <summary>URL override. Defaults to the paused request URL.</summary>
+    public string? Url { get; init; }
+}
+
 /// <summary>
 /// A paused request that can be continued, fulfilled or aborted. Exactly one action wins; later
 /// calls throw because Chromium has already resumed the request.
@@ -156,6 +181,79 @@ public sealed class Route
                 contentType ?? ContentTypeFor(path),
                 headers,
                 cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Performs the paused request through the page's HTTP client and returns the response
+    /// without resuming the route. The caller decides whether to fulfill, continue or abort.
+    /// </summary>
+    public async ValueTask<APIResponse> FetchAsync(
+        RouteFetchOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        options ??= new RouteFetchOptions();
+        APIRequestContext request = _network.ApiRequestProvider?.Invoke()
+            ?? throw new CdpException("Route.FetchAsync requires a page-bound HTTP client.");
+
+        Dictionary<string, string> headers = new(StringComparer.OrdinalIgnoreCase);
+        foreach (CdpHeader header in Request.Headers)
+        {
+            headers[header.Name] = header.Value;
+        }
+
+        if (options.Headers is not null)
+        {
+            foreach ((string name, string value) in options.Headers)
+            {
+                headers[name] = value;
+            }
+        }
+
+        HttpMethod method = options.Method is null
+            ? new HttpMethod(Request.Method)
+            : new HttpMethod(options.Method);
+        APIRequestOptions requestOptions = new()
+        {
+            Headers = headers,
+            Data = options.PostData ?? Request.PostData,
+            MaxRedirects = options.MaxRedirects,
+            Timeout = options.Timeout,
+            FailOnStatusCode = false,
+        };
+
+        string url = options.Url ?? Request.Url;
+        int attempts = Math.Max(1, 1 + (options.MaxRetries ?? 0));
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await request
+                    .SendAsync(method, url, requestOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (HttpRequestException) when (attempt < attempts)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100 * attempt), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Serves an API response, copying its status, headers and body.</summary>
+    public async ValueTask FulfillAsync(
+        APIResponse response,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        byte[] body = await response.BodyAsync(cancellationToken).ConfigureAwait(false);
+        List<CdpHeader> headers = new(response.Headers.Count);
+        foreach ((string name, string value) in response.Headers)
+        {
+            headers.Add(new CdpHeader(name, value));
+        }
+
+        await FulfillAsync(response.Status, body, contentType: null, headers, cancellationToken)
             .ConfigureAwait(false);
     }
 

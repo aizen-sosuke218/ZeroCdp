@@ -167,8 +167,19 @@ public class JSHandle : IAsyncDisposable
     /// Evaluates a function with this handle as its argument. Function expressions such as
     /// <c>value => value.textContent</c> are supported; any other expression is evaluated directly.
     /// </summary>
-    public async ValueTask<EvaluationResult> EvaluateAsync(
+    public ValueTask<EvaluationResult> EvaluateAsync(
         string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates a function with this handle as its argument. A plain handle always evaluates in
+    /// the world it already belongs to; element handles override this to honour
+    /// <paramref name="isolatedContext"/>.
+    /// </summary>
+    public virtual async ValueTask<EvaluationResult> EvaluateAsync(
+        string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);
@@ -190,8 +201,19 @@ public class JSHandle : IAsyncDisposable
     }
 
     /// <summary>Evaluates a function and keeps the result as a handle.</summary>
-    public async ValueTask<JSHandle> EvaluateHandleAsync(
+    public ValueTask<JSHandle> EvaluateHandleAsync(
         string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateHandleAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates a function and keeps the result as a handle. A plain handle always evaluates in
+    /// the world it already belongs to; element handles override this to honour
+    /// <paramref name="isolatedContext"/>.
+    /// </summary>
+    public virtual async ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);

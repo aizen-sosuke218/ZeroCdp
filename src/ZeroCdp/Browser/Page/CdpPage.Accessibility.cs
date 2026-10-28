@@ -12,7 +12,8 @@ public sealed partial class CdpPage
     internal async ValueTask<string> GetAriaSnapshotAsync(
         long nodeId,
         bool interestingOnly,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? depth = null)
     {
         FrameContext context = ContextForNode(nodeId);
         DomNode? info = await GetNodeInfoAsync(nodeId, cancellationToken).ConfigureAwait(false);
@@ -29,6 +30,24 @@ public sealed partial class CdpPage
             tree.NodesJson,
             interestingOnly,
             info.BackendNodeId);
-        return root?.ToYaml() ?? string.Empty;
+        return root?.ToYaml(depth) ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Returns a Playwright-style YAML aria snapshot of the whole page. Depth limits the number
+    /// of nested levels; null includes the full tree.
+    /// </summary>
+    internal async ValueTask<string> GetPageAriaSnapshotAsync(
+        bool interestingOnly,
+        int? depth,
+        CancellationToken cancellationToken)
+    {
+        await EnableAsync(cancellationToken).ConfigureAwait(false);
+        AXTreeResult tree = await Session
+            .SendAsync<AXTreeResult>("Accessibility.getFullAXTree"u8, cancellationToken)
+            .ConfigureAwait(false);
+
+        AccessibilityNode? root = AccessibilityTreeParser.Parse(tree.NodesJson, interestingOnly);
+        return root?.ToYaml(depth) ?? string.Empty;
     }
 }

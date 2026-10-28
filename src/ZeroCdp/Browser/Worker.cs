@@ -44,8 +44,18 @@ public sealed class Worker
     public bool IsClosed => Volatile.Read(ref _closed) != 0;
 
     /// <summary>Evaluates JavaScript in the worker's main context.</summary>
+    public ValueTask<EvaluationResult> EvaluateAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates JavaScript in the worker's main context. Workers have a single execution world,
+    /// so <paramref name="isolatedContext"/> is accepted for Patchright API parity and ignored.
+    /// </summary>
     public async ValueTask<EvaluationResult> EvaluateAsync(
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);
@@ -62,8 +72,19 @@ public sealed class Worker
     /// The handle is bound to the worker session, so its evaluation and disposal target the
     /// worker rather than the owning page.
     /// </summary>
+    public ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+        => EvaluateHandleAsync(expression, isolatedContext: true, cancellationToken);
+
+    /// <summary>
+    /// Evaluates JavaScript in the worker's main context and keeps the result as a handle.
+    /// Workers have a single execution world, so <paramref name="isolatedContext"/> is accepted
+    /// for Patchright API parity and ignored.
+    /// </summary>
     public async ValueTask<JSHandle> EvaluateHandleAsync(
         string expression,
+        bool isolatedContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expression);

@@ -62,6 +62,18 @@ public sealed partial class CdpBrowser
         _sessionAttached?.Invoke(session);
     }
 
+    /// <summary>
+    /// Creates a CDP session addressed to the browser endpoint. Use it for browser-level commands
+    /// such as <c>Browser.*</c> and <c>Target.*</c>; it does not attach to a page target.
+    /// </summary>
+    public ValueTask<CdpSession> NewBrowserCDPSessionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(CdpSession.CreateBrowserSession(_connection));
+    }
+
     internal async ValueTask<CdpSession> WaitForAttachedSessionAsync(
         string targetId,
         string sessionId,

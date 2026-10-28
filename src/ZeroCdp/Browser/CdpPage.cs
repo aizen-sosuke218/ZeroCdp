@@ -64,10 +64,6 @@ public sealed partial class CdpPage : IAsyncDisposable
 
     private readonly NetworkState _network;
 
-    private readonly Dictionary<string, IsolatedWorldRuntime> _frameWorlds = new(StringComparer.Ordinal);
-
-    private readonly Lock _frameWorldsGate = new();
-
     private readonly Lock _dialogGate = new();
 
     private readonly Lock _bindingGate = new();
@@ -136,6 +132,7 @@ public sealed partial class CdpPage : IAsyncDisposable
         _touchscreen = new Touchscreen(_input);
         _isolated = new IsolatedWorldRuntime(session);
         _network = new NetworkState(session, context.Routes);
+        _network.ApiRequestProvider = () => APIRequest;
         Session = session;
         Context = context;
 

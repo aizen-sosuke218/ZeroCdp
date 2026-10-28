@@ -329,7 +329,7 @@ public sealed partial class BrowserContext
     /// <see cref="BrowserContextOptions.ExtraHttpHeaders"/>; passing an empty list removes the
     /// headers from the current pages.
     /// </remarks>
-    public async ValueTask SetExtraHttpHeadersAsync(
+    public async ValueTask SetExtraHTTPHeadersAsync(
         IReadOnlyList<CdpHeader> headers,
         CancellationToken cancellationToken = default)
     {

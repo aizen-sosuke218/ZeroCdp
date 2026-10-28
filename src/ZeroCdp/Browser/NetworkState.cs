@@ -11,6 +11,7 @@ internal sealed partial class NetworkState : IDisposable
     private readonly List<RouteRegistration> _routes = new();
     private readonly Lock _requestGate = new();
     private readonly Dictionary<string, PageRequest> _requests = new(StringComparer.Ordinal);
+    private readonly List<PageRequest> _observedRequests = new();
     private readonly Dictionary<string, PageResponse> _responses = new(StringComparer.Ordinal);
     private readonly Lock _webSocketGate = new();
     private readonly Dictionary<string, WebSocketInfo> _webSockets = new(StringComparer.Ordinal);
@@ -31,8 +32,25 @@ internal sealed partial class NetworkState : IDisposable
         _contextRoutes = contextRoutes;
     }
 
+    /// <summary>
+    /// Supplies the context-bound HTTP client used by <see cref="Route.FetchAsync"/>. Set by the
+    /// owning page; null when no page is attached.
+    /// </summary>
+    internal Func<APIRequestContext>? ApiRequestProvider { get; set; }
+
     /// <summary>Requests that have started but not finished or failed.</summary>
     public int InFlightPendingRequests => Math.Max(0, Volatile.Read(ref _inFlight));
+
+    /// <summary>Snapshot of every request observed so far, oldest first.</summary>
+    public IReadOnlyList<PageRequest> GetRequests()
+    {
+        lock (_requestGate)
+        {
+            // The observation log is appended in protocol order, which is also the request start
+            // order. Unlike the in-flight map it keeps finished requests.
+            return _observedRequests.ToArray();
+        }
+    }
 
     /// <summary>
     /// Waits until no request has been in flight for <paramref name="idle"/>.
@@ -191,6 +209,7 @@ internal sealed partial class NetworkState : IDisposable
                 lock (_requestGate)
                 {
                     _responses[response.RequestId] = response;
+                    response.Session = _session;
                     if (_requests.TryGetValue(response.RequestId, out PageRequest? request))
                     {
                         response.Request = request;

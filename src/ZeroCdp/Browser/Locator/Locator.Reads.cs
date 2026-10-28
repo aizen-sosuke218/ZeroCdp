@@ -257,7 +257,11 @@ public sealed partial class Locator
             .ConfigureAwait(false);
 
         return await _page
-            .GetAriaSnapshotAsync(nodeId, options?.InterestingOnly ?? true, cancellationToken)
+            .GetAriaSnapshotAsync(
+                nodeId,
+                options?.InterestingOnly ?? true,
+                cancellationToken,
+                options?.Depth)
             .ConfigureAwait(false);
     }
 

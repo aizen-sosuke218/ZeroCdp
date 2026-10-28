@@ -607,6 +607,12 @@ internal sealed partial class NetworkState
                 _requests.Clear();
             }
 
+            if (_observedRequests.Count >= 4096)
+            {
+                _observedRequests.RemoveRange(0, 1024);
+            }
+
+            _observedRequests.Add(request);
             _requests.Remove(request.RequestId, out PageRequest? previous);
             _requests[request.RequestId] = request;
             return previous;

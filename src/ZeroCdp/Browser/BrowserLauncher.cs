@@ -12,6 +12,13 @@ public static class BrowserLauncher
     private const string ActivePortFileName = "DevToolsActivePort";
 
     /// <summary>
+    /// Launches a browser with the default <see cref="LaunchOptions"/> and connects over CDP.
+    /// </summary>
+    public static ValueTask<LaunchedBrowser> LaunchAsync(
+        CancellationToken cancellationToken = default)
+        => LaunchAsync(new LaunchOptions(), connectionOptions: null, cancellationToken);
+
+    /// <summary>
     /// Launches a browser with a private profile and connects over CDP.
     /// </summary>
     /// <remarks>
@@ -192,7 +199,7 @@ public static class BrowserLauncher
     /// Disposing the returned browser disconnects: it closes the pages and contexts it created and
     /// leaves the browser process running, unlike disposing a <see cref="LaunchedBrowser"/>.
     /// </remarks>
-    public static async ValueTask<CdpBrowser> ConnectOverCdpAsync(
+    public static async ValueTask<CdpBrowser> ConnectOverCDPAsync(
         string webSocketEndpoint,
         CdpConnectionOptions? connectionOptions = null,
         ZeroCdp.Security.NavigationPolicy? navigationPolicy = null,

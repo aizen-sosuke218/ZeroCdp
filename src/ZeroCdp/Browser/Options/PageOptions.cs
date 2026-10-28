@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ZeroCdp.Protocol;
 
 namespace ZeroCdp.Browser;
@@ -37,6 +38,54 @@ public sealed class PageWaitForNavigationOptions
 
     /// <summary>Navigation timeout. Null uses <see cref="CdpPage.DefaultNavigationTimeout"/>.</summary>
     public TimeSpan? Timeout { get; init; }
+}
+
+/// <summary>Options for <see cref="Frame.WaitForNavigationAsync"/>.</summary>
+public sealed class FrameWaitForNavigationOptions
+{
+    /// <summary>URL glob the committed URL must match. Null matches any navigation.</summary>
+    public string? Url { get; init; }
+
+    /// <summary>Regular expression the committed URL must match.</summary>
+    public Regex? UrlRegex { get; init; }
+
+    /// <summary>Predicate the committed URL must satisfy.</summary>
+    public Func<string, bool>? UrlFunc { get; init; }
+
+    /// <summary>Lifecycle point to wait for after the commit. Defaults to <see cref="WaitUntilState.Load"/>.</summary>
+    public WaitUntilState? WaitUntil { get; init; }
+
+    /// <summary>Navigation timeout. Null uses <see cref="CdpPage.DefaultNavigationTimeout"/>.</summary>
+    public TimeSpan? Timeout { get; init; }
+}
+
+/// <summary>Options for <see cref="Frame.RunAndWaitForNavigationAsync"/>.</summary>
+public sealed class FrameRunAndWaitForNavigationOptions
+{
+    /// <summary>URL glob the committed URL must match. Null matches any navigation.</summary>
+    public string? Url { get; init; }
+
+    /// <summary>Regular expression the committed URL must match.</summary>
+    public Regex? UrlRegex { get; init; }
+
+    /// <summary>Predicate the committed URL must satisfy.</summary>
+    public Func<string, bool>? UrlFunc { get; init; }
+
+    /// <summary>Lifecycle point to wait for after the commit. Defaults to <see cref="WaitUntilState.Load"/>.</summary>
+    public WaitUntilState? WaitUntil { get; init; }
+
+    /// <summary>Navigation timeout. Null uses <see cref="CdpPage.DefaultNavigationTimeout"/>.</summary>
+    public TimeSpan? Timeout { get; init; }
+}
+
+/// <summary>Options for <see cref="Frame.EvalOnSelectorAsync"/>.</summary>
+public sealed class FrameEvalOnSelectorOptions
+{
+    /// <summary>
+    /// When true, the selector must resolve to a single element. Defaults to false, matching
+    /// Playwright's legacy selector APIs.
+    /// </summary>
+    public bool? Strict { get; init; }
 }
 
 /// <summary>Playwright-compatible options for <see cref="CdpPage.CloseAsync(PageCloseOptions, CancellationToken)"/>.</summary>

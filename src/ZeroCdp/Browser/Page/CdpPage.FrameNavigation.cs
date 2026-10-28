@@ -35,7 +35,7 @@ public sealed partial class CdpPage
         NavigateResult navigation = await context.Session
             .SendAsync<NavigateResult, NavigateParams>(
                 "Page.navigate"u8,
-                new NavigateParams(url, context.Id == 0 ? frameId : null),
+                new NavigateParams(url, context.IsOopif ? null : frameId),
                 cancellationToken)
             .ConfigureAwait(false);
 

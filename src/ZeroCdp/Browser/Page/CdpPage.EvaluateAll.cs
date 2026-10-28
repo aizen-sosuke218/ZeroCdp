@@ -1,18 +1,27 @@
 using System.Text;
 using ZeroCdp.Protocol;
+using ZeroCdp.Runtime;
 using ZeroCdp.Stealth;
 
 namespace ZeroCdp.Browser;
 
 public sealed partial class CdpPage
 {
+    internal ValueTask<EvaluationResult> EvaluateOnNodesAsync(
+        long[] nodeIds,
+        string functionDeclaration,
+        CancellationToken cancellationToken)
+        => EvaluateOnNodesAsync(nodeIds, functionDeclaration, isolatedContext: true, cancellationToken);
+
     /// <summary>
     /// Calls a function with an array containing every supplied element. The function runs in the
-    /// isolated world of the frame that owns the nodes.
+    /// isolated world of the frame that owns the nodes by default, or in that frame's main world
+    /// when <paramref name="isolatedContext"/> is false.
     /// </summary>
     internal async ValueTask<EvaluationResult> EvaluateOnNodesAsync(
         long[] nodeIds,
         string functionDeclaration,
+        bool isolatedContext,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(functionDeclaration);
@@ -22,7 +31,6 @@ public sealed partial class CdpPage
         }
 
         (int contextId, _) = DecodeNodeId(nodeIds[0]);
-        FrameContext context = ContextForNode(nodeIds[0]);
         for (int i = 1; i < nodeIds.Length; i++)
         {
             (int otherContextId, _) = DecodeNodeId(nodeIds[i]);
@@ -32,26 +40,25 @@ public sealed partial class CdpPage
             }
         }
 
-        // DOM.resolveNode needs a live execution context; creating the isolated world here keeps
-        // the call independent of whether any other evaluation happened first.
-        await context.World.EvaluateAsync("undefined", cancellationToken).ConfigureAwait(false);
-        int executionContextId = context.World.ExecutionContextId;
+        FrameContext context = ContextForNode(nodeIds[0]);
+        int executionContextId = isolatedContext
+            ? await context.World.EnsureContextIdAsync(cancellationToken).ConfigureAwait(false)
+            : 0;
 
-        List<string> objectIds = new(nodeIds.Length);
-        foreach (long nodeId in nodeIds)
+        List<string> objectIds;
+        try
         {
-            ResolveNodeResult resolved = await context.Session
-                .SendAsync<ResolveNodeResult, ResolveNodeParams>(
-                    "DOM.resolveNode"u8,
-                    new ResolveNodeParams(RealNodeId(nodeId), executionContextId),
-                    cancellationToken)
+            objectIds = await ResolveObjectIdsAsync(context, nodeIds, executionContextId, cancellationToken)
                 .ConfigureAwait(false);
-            if (string.IsNullOrEmpty(resolved.ObjectId))
-            {
-                throw new CdpException("DOM.resolveNode did not return an object id.");
-            }
-
-            objectIds.Add(resolved.ObjectId);
+        }
+        catch (CdpCommandException ex) when (isolatedContext && IsolatedWorldRuntime.IsStaleContext(ex))
+        {
+            context.World.Invalidate();
+            int retryContextId = await context.World
+                .EnsureContextIdAsync(cancellationToken)
+                .ConfigureAwait(false);
+            objectIds = await ResolveObjectIdsAsync(context, nodeIds, retryContextId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         StringBuilder arguments = new(objectIds.Count * 32 + 2);
@@ -76,5 +83,31 @@ public sealed partial class CdpPage
                 new CallFunctionOnObjectParams(wrapper, objectIds[0], arguments.ToString()),
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private static async ValueTask<List<string>> ResolveObjectIdsAsync(
+        FrameContext context,
+        long[] nodeIds,
+        int executionContextId,
+        CancellationToken cancellationToken)
+    {
+        List<string> objectIds = new(nodeIds.Length);
+        foreach (long nodeId in nodeIds)
+        {
+            ResolveNodeResult resolved = await context.Session
+                .SendAsync<ResolveNodeResult, ResolveNodeParams>(
+                    "DOM.resolveNode"u8,
+                    new ResolveNodeParams(RealNodeId(nodeId), executionContextId),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrEmpty(resolved.ObjectId))
+            {
+                throw new CdpException("DOM.resolveNode did not return an object id.");
+            }
+
+            objectIds.Add(resolved.ObjectId);
+        }
+
+        return objectIds;
     }
 }

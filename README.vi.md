@@ -15,7 +15,7 @@ Runtime. Lần duy nhất có thể bật Runtime theo ý muốn là `RouteWebSo
 được ghi rõ riêng.
 
 Gói hiện tại là [**ZeroCdp** trên NuGet](https://www.nuget.org/packages/ZeroCdp) phiên bản
-**0.1.0-alpha**. API dùng được để đánh giá, nhưng các bản minor vẫn có thể thay đổi mang tính bổ
+**0.2.0-alpha**. API dùng được để đánh giá, nhưng các bản minor vẫn có thể thay đổi mang tính bổ
 sung hoặc chỉnh sửa.
 
 ## Cài đặt
@@ -27,7 +27,7 @@ dotnet add package ZeroCdp
 Hoặc ghim rõ phiên bản:
 
 ```bash
-dotnet add package ZeroCdp --version 0.1.0-alpha
+dotnet add package ZeroCdp --version 0.2.0-alpha
 ```
 
 Gói target `net10.0`, trimmable hoàn toàn (analyzer `IsTrimmable`, `IsAotCompatible` được bật nghiêm
@@ -55,7 +55,7 @@ ngặt lúc build) và chỉ phụ thuộc BCL.
 
 Gate T0 là một khẳng định cứng: dispatch một event CDP cấp phát **0 byte** trên steady-state,
 tính cả routing theo session. Trên máy phát triển, frame event 150 byte dispatch mất khoảng
-234 ns, event có routing session khoảng 258 ns. Bộ test đầy đủ gồm **222 test**.
+234 ns, event có routing session khoảng 258 ns. Bộ test đầy đủ gồm **250 test**.
 
 ## Yêu cầu
 
@@ -105,6 +105,29 @@ cả document mỗi lần poll. Đường `pierceShadowDom: true` tường minh 
 Locator inner = page.Locator("#inner", pierceShadowDom: true);
 await inner.ClickAsync();
 ```
+
+### Mặc định evaluate kiểu Patchright
+
+Mọi entry point evaluate đã vá đều chạy isolated world mặc định: `Page`, `Frame`, `Locator`,
+`JSHandle`/`ElementHandle` và `Worker`. Script của trang không thấy global của automation, và
+isolated world không thấy global của trang; DOM dùng chung. Chỉ truyền `isolatedContext: false`
+khi script cần đọc/ghi chính main world của trang:
+
+```csharp
+// Isolated world (mặc định).
+await page.Locator("#total").EvaluateAsync("el => el.textContent");
+await page.Locator(".row").EvaluateAllAsync("rows => rows.length");
+
+// Chủ động vào main world.
+await page.EvaluateAsync("window.appConfig.version", isolatedContext: false);
+```
+
+Frame cũng vậy, kể cả iframe cùng tiến trình và out-of-process: element handle được route về đúng
+frame sở hữu, nên evaluate nối chuỗi luôn ở đúng world. Bề mặt parity còn có
+`EvalOnSelectorAsync`/`EvalOnSelectorAllAsync`, `AriaSnapshotAsync`, `FrameByUrl`, `RequestsAsync`,
+`WaitForWorkerAsync`, locator `WaitForFunctionAsync`/`Within`/nối chuỗi, `Route.FetchAsync` với
+`FulfillAsync(APIResponse)`, `Download.CreateReadStreamAsync`, `Mouse.DblClickAsync` và CDP session
+cấp browser (`NewBrowserCDPSessionAsync`).
 
 ### API nâng cao kiểu Playwright
 
@@ -590,7 +613,7 @@ closed-shadow tự động **~650 µs**; tra cứu role ngữ nghĩa **~550 µs*
 `Browser.getVersion` **~133 µs**. Sample AOT publish ra **8,0 MiB**, gói NuGet khoảng **450 KB**.
 
 Test suite chịu được máy không có browser: test phụ thuộc môi trường trả sớm thay vì fail. Trên
-máy có Chromium, bộ **222 test** chạy thật pipe transport, isolated world, context, page/context
+máy có Chromium, bộ **250 test** chạy thật pipe transport, isolated world, context, page/context
 route và observation, response body, lịch sử điều hướng, locator CSS và ngữ nghĩa, frame
 cùng tiến trình và out-of-process (kể cả OOPIF lồng nhau), pierce closed-shadow, storage state
 (kể cả IndexedDB), popup, download, file chooser, upload, permission/geolocation, screenshot,

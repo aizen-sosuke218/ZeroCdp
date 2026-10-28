@@ -15,7 +15,7 @@ Runtime domain. The only opt-in Runtime use is the `RouteWebSocketAsync` console
 documented separately.
 
 The current package is [**ZeroCdp** on NuGet](https://www.nuget.org/packages/ZeroCdp) at
-**0.1.0-alpha**. The API is usable for evaluation, but minor releases may still make additive or
+**0.2.0-alpha**. The API is usable for evaluation, but minor releases may still make additive or
 corrective changes.
 
 ## Installation
@@ -27,7 +27,7 @@ dotnet add package ZeroCdp
 Or set the version explicitly:
 
 ```bash
-dotnet add package ZeroCdp --version 0.1.0-alpha
+dotnet add package ZeroCdp --version 0.2.0-alpha
 ```
 
 The package targets `net10.0`, is fully trimmable (`IsTrimmable`, `IsAotCompatible` analyzers are
@@ -55,7 +55,7 @@ enforced at build time) and depends only on the Base Class Library.
 
 The T0 gate is a hard assertion: dispatching a CDP event allocates **0 bytes** on the steady-state
 path, including session-scoped routing. On the development machine a 150-byte event frame dispatches
-in roughly 234 ns, and a session-routed event in roughly 258 ns. The full suite is **222 tests**.
+in roughly 234 ns, and a session-routed event in roughly 258 ns. The full suite is **250 tests**.
 
 ## Requirements
 
@@ -96,7 +96,7 @@ if (result.Value.TryGetInt64(out long links))
 ### Install from NuGet
 
 ```bash
-dotnet add package ZeroCdp --version 0.1.0-alpha
+dotnet add package ZeroCdp --version 0.2.0-alpha
 ```
 
 Locators re-resolve on every action, so they keep working after navigation or a re-render. Actions
@@ -111,6 +111,30 @@ on every poll. The explicit `pierceShadowDom: true` path remains available:
 Locator inner = page.Locator("#inner", pierceShadowDom: true);
 await inner.ClickAsync();
 ```
+
+### Patchright-style evaluation defaults
+
+Evaluation is isolated by default on every patched entry point: `Page`, `Frame`, `Locator`,
+`JSHandle`/`ElementHandle` and `Worker`. A page script cannot see the automation globals, and the
+isolated world cannot see the page's globals; the DOM is shared. Pass `isolatedContext: false` only
+when a script needs to read or write the page's own world:
+
+```csharp
+// Isolated world (default).
+await page.Locator("#total").EvaluateAsync("el => el.textContent");
+await page.Locator(".row").EvaluateAllAsync("rows => rows.length");
+
+// Main world opt-in.
+await page.EvaluateAsync("window.appConfig.version", isolatedContext: false);
+```
+
+Frames get the same treatment, including same-process iframes and out-of-process iframes: element
+handles are routed back to the frame that owns them, so chained locator evaluation stays in the
+correct world. The parity surface also includes `EvalOnSelectorAsync`/`EvalOnSelectorAllAsync`,
+`AriaSnapshotAsync`, `FrameByUrl`, `RequestsAsync`, `WaitForWorkerAsync`, locator
+`WaitForFunctionAsync`/`Within`/chaining, `Route.FetchAsync` with `FulfillAsync(APIResponse)`,
+`Download.CreateReadStreamAsync`, `Mouse.DblClickAsync` and browser-level CDP sessions
+(`NewBrowserCDPSessionAsync`).
 
 ### Playwright-style advanced API
 
@@ -596,7 +620,7 @@ semantic role lookup **~550 µs**; locator click **~33 ms**; `Browser.getVersion
 The AOT sample publishes to **8.0 MiB** and the package to about **450 KB**.
 
 The test suite tolerates a machine without a browser: environment-dependent tests return early
-instead of failing. On a machine with Chromium the **222-test** suite exercises the real pipe transport,
+instead of failing. On a machine with Chromium the **250-test** suite exercises the real pipe transport,
 isolated worlds, contexts, page/context routes and observation, response bodies, navigation history,
 CSS and semantic locators, same-process and out-of-process frames (including nested OOPIFs),
 closed-shadow piercing, storage state (including IndexedDB), popups, downloads, file choosers, uploads,
