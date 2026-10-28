@@ -81,12 +81,14 @@ public sealed class APIRequestFile
 public sealed class APIResponse : IAsyncDisposable
 {
     private readonly byte[] _body;
+    private readonly IReadOnlyList<Protocol.CdpHeader> _headersArray;
 
     internal APIResponse(
         HttpStatusCode status,
         string statusText,
         string url,
         IReadOnlyDictionary<string, string> headers,
+        IReadOnlyList<Protocol.CdpHeader> headersArray,
         byte[] body,
         string? contentEncoding)
     {
@@ -94,6 +96,7 @@ public sealed class APIResponse : IAsyncDisposable
         StatusText = statusText;
         Url = url;
         Headers = headers;
+        _headersArray = headersArray;
         _body = body;
         ContentEncoding = contentEncoding;
     }
@@ -109,6 +112,14 @@ public sealed class APIResponse : IAsyncDisposable
     public IReadOnlyDictionary<string, string> Headers { get; }
 
     public string? ContentEncoding { get; }
+
+    /// <summary>Playwright-style async accessor for <see cref="Headers"/>.</summary>
+    public ValueTask<IReadOnlyDictionary<string, string>> HeadersAsync()
+        => new(Headers);
+
+    /// <summary>Every response header as name/value pairs, preserving order and duplicates.</summary>
+    public ValueTask<IReadOnlyList<Protocol.CdpHeader>> HeadersArrayAsync()
+        => new(_headersArray);
 
     public ValueTask<byte[]> BodyAsync(CancellationToken cancellationToken = default)
     {
@@ -156,6 +167,7 @@ public sealed class APIRequestContext : IAsyncDisposable
     private readonly APIRequestHttpCredentials? _credentials;
     private readonly Func<string, CancellationToken, ValueTask<IReadOnlyList<Protocol.CdpCookie>>>? _cookieProvider;
     private readonly Func<string, IReadOnlyList<Protocol.CdpCookie>, CancellationToken, ValueTask>? _cookieSink;
+    private readonly CookieContainer? _cookies;
     private int _disposed;
 
     internal APIRequestContext(
@@ -165,7 +177,8 @@ public sealed class APIRequestContext : IAsyncDisposable
         TimeSpan timeout,
         APIRequestHttpCredentials? credentials,
         Func<string, CancellationToken, ValueTask<IReadOnlyList<Protocol.CdpCookie>>>? cookieProvider = null,
-        Func<string, IReadOnlyList<Protocol.CdpCookie>, CancellationToken, ValueTask>? cookieSink = null)
+        Func<string, IReadOnlyList<Protocol.CdpCookie>, CancellationToken, ValueTask>? cookieSink = null,
+        CookieContainer? cookies = null)
     {
         _client = client;
         _baseUrl = string.IsNullOrEmpty(baseUrl) ? null : baseUrl;
@@ -174,6 +187,7 @@ public sealed class APIRequestContext : IAsyncDisposable
         _credentials = credentials;
         _cookieProvider = cookieProvider;
         _cookieSink = cookieSink;
+        _cookies = cookies;
     }
 
     public ValueTask<APIResponse> GetAsync(
@@ -292,14 +306,19 @@ public sealed class APIRequestContext : IAsyncDisposable
                 .ReadAsByteArrayAsync(timeoutSource.Token)
                 .ConfigureAwait(false);
             Dictionary<string, string> headers = new(StringComparer.OrdinalIgnoreCase);
+            List<Protocol.CdpHeader> headersArray = new();
             foreach (KeyValuePair<string, IEnumerable<string>> header in response.Headers)
             {
-                headers[header.Key] = string.Join(", ", header.Value);
+                string value = string.Join(", ", header.Value);
+                headers[header.Key] = value;
+                headersArray.Add(new Protocol.CdpHeader(header.Key, value));
             }
 
             foreach (KeyValuePair<string, IEnumerable<string>> header in response.Content.Headers)
             {
-                headers[header.Key] = string.Join(", ", header.Value);
+                string value = string.Join(", ", header.Value);
+                headers[header.Key] = value;
+                headersArray.Add(new Protocol.CdpHeader(header.Key, value));
             }
 
             if (_cookieSink is not null
@@ -326,6 +345,7 @@ public sealed class APIRequestContext : IAsyncDisposable
                 response.ReasonPhrase ?? string.Empty,
                 response.RequestMessage?.RequestUri?.ToString() ?? requestUrl,
                 headers,
+                headersArray,
                 body,
                 response.Content.Headers.ContentEncoding.FirstOrDefault());
 
@@ -339,6 +359,50 @@ public sealed class APIRequestContext : IAsyncDisposable
 
             return result;
         }
+    }
+
+    /// <summary>
+    /// Snapshots cookies known to this request context. A context bound to a browser captures the
+    /// browser context's jar; a standalone context captures its own container. There are no
+    /// origins because API-only contexts do not have a <c>localStorage</c>.
+    /// </summary>
+    public async ValueTask<StorageState> StorageStateAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        IReadOnlyList<Protocol.CdpCookie> cookies;
+        if (_cookieProvider is not null)
+        {
+            cookies = await _cookieProvider(_baseUrl ?? string.Empty, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else if (_cookies is not null)
+        {
+            List<Protocol.CdpCookie> snapshot = new();
+            foreach (Cookie cookie in _cookies.GetAllCookies())
+            {
+                snapshot.Add(new Protocol.CdpCookie
+                {
+                    Name = cookie.Name,
+                    Value = cookie.Value,
+                    Domain = cookie.Domain ?? string.Empty,
+                    Path = string.IsNullOrEmpty(cookie.Path) ? "/" : cookie.Path,
+                    Expires = cookie.Expires == DateTime.MinValue
+                        ? -1
+                        : new DateTimeOffset(cookie.Expires.ToUniversalTime()).ToUnixTimeSeconds(),
+                    Secure = cookie.Secure,
+                    HttpOnly = cookie.HttpOnly,
+                });
+            }
+
+            cookies = snapshot;
+        }
+        else
+        {
+            cookies = Array.Empty<Protocol.CdpCookie>();
+        }
+
+        return new StorageState { Cookies = cookies };
     }
 
     public ValueTask DisposeAsync()
@@ -654,6 +718,7 @@ public static class APIRequest
             options.Timeout ?? TimeSpan.FromSeconds(30),
             options.HttpCredentials,
             cookieProvider,
-            cookieSink);
+            cookieSink,
+            cookies);
     }
 }

@@ -295,7 +295,12 @@ await context.GrantPermissionsAsync("geolocation", "https://example.com");
 await using CdpPage isolated = await context.NewPageAsync("https://example.com");
 
 CookiesResult cookies = await context.GetCookiesAsync();
+IReadOnlyList<CdpCookie> cookieList = await context.CookiesAsync();
+await context.AddCookiesAsync([new CdpCookie { Name = "sid", Value = "1", Url = "https://example.com/" }]);
+await context.ClearCookiesAsync(new BrowserContextClearCookiesOptions { Name = "sid" });
 await context.ClearCookiesAsync();
+await context.ClearGeolocationAsync();
+await context.UnrouteAllAsync(); // route HTTP và WebSocket
 
 // Storage state tương thích Playwright, gồm cả localStorage cho origin HTTP(S).
 StorageState state = await context.StorageStateAsync();
@@ -383,15 +388,26 @@ await page.RouteWebSocketAsync("ws://example.test/**", async socket =>
 
 Task<PageResponse> wait = page.WaitForResponseAsync("**/api/**");
 Task<PageResponse> contextWait = context.WaitForResponseAsync("**/api/**");
+Task<PageResponse> finishedWait = page.WaitForRequestFinishedAsync("**/api/**");
+Task<RequestFailure> failedWait = context.WaitForRequestFailedAsync("**/offline/**");
 await page.EvaluateAsync("fetch('/api/users')");
 PageResponse response = await wait;
 PageResponse sameResponse = await contextWait;
+PageResponse finished = await finishedWait;
 NetworkBody body = await page.GetResponseBodyAsync(response);
 
 context.Request += request => Console.WriteLine($"{request.Method} {request.Url}");
 context.Response += observed => Console.WriteLine($"{observed.Status} {observed.Url}");
+context.RequestFinished += done => Console.WriteLine($"{done.Status} {done.Url}");
 context.RequestFailed += failure => Console.WriteLine($"{failure.ErrorText} {failure.Url}");
 await context.EnableNetworkAsync();
+
+// Waiter có thể bọc luôn thao tác gây ra sự kiện.
+PageResponse fetched = await page.RunAndWaitForRequestFinishedAsync(
+    () => page.EvaluateAsync("fetch('/api/users')"));
+string commit = await page.RunAndWaitForNavigationAsync(
+    () => page.Locator("#next").ClickAsync(),
+    waitUntil: WaitUntil.Commit);
 
 await page.ReloadAsync();
 await page.GoBackAsync();
@@ -400,9 +416,18 @@ await page.WaitForLoadStateAsync(WaitUntil.Load);
 ```
 
 Helper điều hướng gồm `ReloadAsync`, `GoBackAsync`, `GoForwardAsync`, `GetNavigationHistoryAsync`,
-`WaitForUrlAsync`, `WaitForLoadStateAsync`, `SetContentAsync`, `SetViewportSizeAsync`,
-`EmulateColorSchemeAsync`, `PdfAsync`, `BringToFrontAsync`, `SetBypassCspAsync`,
-`SetGeolocationAsync`, các chế độ offline/cache-header, và đọc response body.
+`WaitForUrlAsync`, `WaitForNavigationAsync`, `WaitForLoadStateAsync`, `SetContentAsync`,
+`SetViewportSizeAsync` cùng property `ViewportSize`, `EmulateColorSchemeAsync`, `PdfAsync`,
+`BringToFrontAsync`, `SetBypassCspAsync`, `SetGeolocationAsync`, các chế độ offline/cache-header,
+và đọc response body. `RunAndWaitForRequestAsync`, `RunAndWaitForResponseAsync`,
+`RunAndWaitForRequestFinishedAsync`, `RunAndWaitForRequestFailedAsync` và
+`RunAndWaitForWebSocketAsync` theo đúng cách đặt tên của Playwright ở cả page lẫn context. Bề mặt
+page, frame và handle cũng có các helper đọc/trạng thái selector (`GetAttributeAsync`,
+`InnerHTMLAsync`, `InnerTextAsync`, `TextContentAsync`, `InputValueAsync`, `IsVisibleAsync`,
+`IsHiddenAsync`, `IsCheckedAsync`, `IsEnabledAsync`, `IsDisabledAsync`, `IsEditableAsync`) và
+các action của handle (`TapAsync`, `SelectTextAsync`, `DispatchEventAsync`,
+`CheckAsync`/`UncheckAsync`/`SetCheckedAsync` kèm options). API response có `HeadersAsync` và
+`HeadersArrayAsync`, còn `APIRequestContext.StorageStateAsync` chụp lại cookie.
 
 ## Mô hình stealth
 

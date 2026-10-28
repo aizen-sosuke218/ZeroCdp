@@ -320,6 +320,107 @@ public sealed partial class Locator
             .ConfigureAwait(false);
     }
 
+    /// <summary>Playwright-style drag overload with positions, force and trial support.</summary>
+    public async ValueTask DragToAsync(
+        Locator target,
+        LocatorDragToOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(options);
+        if (!ReferenceEquals(_page, target._page))
+        {
+            throw new ArgumentException("DragTo requires both locators to belong to the same page.", nameof(target));
+        }
+
+        TimeSpan effective = EffectiveTimeout(options.Timeout);
+        long start = Stopwatch.GetTimestamp();
+
+        while (true)
+        {
+            long sourceNode = await WaitForActionAsync(
+                    requireVisible: !options.Force,
+                    requireEnabled: !options.Force,
+                    requireEditable: false,
+                    requirement: options.Force ? "attached" : "visible and enabled",
+                    cancellationToken,
+                    options.Timeout)
+                .ConfigureAwait(false);
+
+            (double X, double Y)? sourcePoint = await ResolveActionPointAsync(
+                    sourceNode,
+                    options.SourcePosition,
+                    options.Force,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (sourcePoint.HasValue)
+            {
+                long targetNode = await target.WaitForActionAsync(
+                        requireVisible: true,
+                        requireEnabled: false,
+                        requireEditable: false,
+                        requirement: "visible",
+                        cancellationToken,
+                        options.Timeout)
+                    .ConfigureAwait(false);
+
+                (double X, double Y)? targetPoint = await ResolveActionPointAsync(
+                        targetNode,
+                        options.TargetPosition,
+                        options.Force,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (targetPoint.HasValue)
+                {
+                    if (options.Trial)
+                    {
+                        return;
+                    }
+
+                    await _page
+                        .DragPointsAsync(
+                            sourcePoint.Value.X,
+                            sourcePoint.Value.Y,
+                            targetPoint.Value.X,
+                            targetPoint.Value.Y,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            if (Stopwatch.GetElapsedTime(start) >= effective)
+            {
+                throw new CdpTimeoutException(
+                    $"Locator '{Selector}' could not be dragged to '{target.Selector}' within " +
+                    $"{effective.TotalSeconds:0.###}s.");
+            }
+
+            await Task.Delay(PollIntervalMs, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask<(double X, double Y)?> ResolveActionPointAsync(
+        long nodeId,
+        Position? offset,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        if (offset is { } position)
+        {
+            BoundingBox? box = await _page
+                .GetNodeBoundingBoxAsync(nodeId, cancellationToken)
+                .ConfigureAwait(false);
+            return box is { } value ? (value.X + position.X, value.Y + position.Y) : null;
+        }
+
+        return force
+            ? await _page.GetNodeCenterAsync(nodeId, cancellationToken).ConfigureAwait(false)
+            : await _page.TryGetActionPointAsync(nodeId, cancellationToken).ConfigureAwait(false);
+    }
+
     public ValueTask HoverAsync(CancellationToken cancellationToken = default)
         => HoverCoreAsync(
             timeout: null,
@@ -752,6 +853,29 @@ public sealed partial class Locator
             .ConfigureAwait(false);
 
         return await _page.EvaluateOnNodeAsync(nodeId, expression, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Evaluates an expression with the first match as <c>this</c> and returns a handle to the
+    /// result. A function expression is called with the element as its argument.
+    /// </summary>
+    public async ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        long nodeId = await WaitForActionAsync(
+                requireVisible: false,
+                requireEnabled: false,
+                requireEditable: false,
+                requirement: "attached",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return await _page
+            .EvaluateHandleOnNodeAsync(nodeId, expression, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

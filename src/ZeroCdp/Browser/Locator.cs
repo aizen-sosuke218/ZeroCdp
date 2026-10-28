@@ -300,6 +300,9 @@ public sealed partial class Locator
 
     public string Selector => _plan.Display;
 
+    /// <summary>The page this locator resolves against.</summary>
+    public CdpPage Page => _page;
+
     /// <summary>When true the selector is evaluated across shadow boundaries, including closed roots.</summary>
     public bool PierceShadowDom => _plan.Pierce;
 

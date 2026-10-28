@@ -151,6 +151,30 @@ public sealed class LocatorSelectOptionOptions
     public IReadOnlyList<int>? Indexes { get; init; }
 }
 
+/// <summary>Options for <see cref="Locator.DragToAsync(Locator, LocatorDragToOptions, CancellationToken)"/>.</summary>
+public sealed class LocatorDragToOptions
+{
+    public TimeSpan? Timeout { get; init; }
+
+    /// <summary>Skip the visible/enabled checks and drag from the element's centre.</summary>
+    public bool Force { get; init; }
+
+    /// <summary>Perform actionability checks but do not dispatch the drag.</summary>
+    public bool Trial { get; init; }
+
+    /// <summary>Drag from this offset relative to the source element's top-left corner.</summary>
+    public Position? SourcePosition { get; init; }
+
+    /// <summary>Drop at this offset relative to the target element's top-left corner.</summary>
+    public Position? TargetPosition { get; init; }
+
+    /// <summary>Kept for Playwright compatibility; the trusted drag sequence does not hold modifier keys.</summary>
+    public KeyModifiers Modifiers { get; init; }
+
+    /// <summary>Kept for Playwright compatibility; actions never wait for navigation by default.</summary>
+    public bool NoWaitAfter { get; init; }
+}
+
 /// <summary>Options for <see cref="Locator.SetInputFilesAsync(IReadOnlyList{string}, LocatorSetInputFilesOptions, CancellationToken)"/>.</summary>
 public sealed class LocatorSetInputFilesOptions
 {

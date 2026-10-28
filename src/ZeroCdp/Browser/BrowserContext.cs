@@ -34,6 +34,7 @@ public sealed partial class BrowserContext : IAsyncDisposable
     private readonly Action<PageResponse> _forwardResponse;
     private readonly Action<RequestFailure> _forwardFailure;
     private readonly Action<WebSocketInfo> _forwardWebSocket;
+    private readonly Action<PageResponse> _forwardFinished;
     private Action<CdpPage>? _pageOpened;
     private Action<CdpPage>? _pageAdded;
     private Action<CdpPage>? _pageClosed;
@@ -42,6 +43,7 @@ public sealed partial class BrowserContext : IAsyncDisposable
     private Action<PageResponse>? _responseReceived;
     private Action<RequestFailure>? _requestFailed;
     private Action<WebSocketInfo>? _webSocketCreated;
+    private Action<PageResponse>? _requestFinished;
     private int _disposed;
 
     internal BrowserContext(CdpBrowser browser, string? browserContextId, BrowserContextOptions? options)
@@ -57,6 +59,7 @@ public sealed partial class BrowserContext : IAsyncDisposable
         _forwardResponse = OnPageResponse;
         _forwardFailure = OnPageFailure;
         _forwardWebSocket = OnPageWebSocket;
+        _forwardFinished = OnPageFinished;
     }
 
     public CdpBrowser Browser => _browser;
@@ -393,6 +396,11 @@ public sealed partial class BrowserContext : IAsyncDisposable
                 page.WebSocketCreated += _forwardWebSocket;
             }
 
+            if (_requestFinished is not null)
+            {
+                page.RequestFinished += _forwardFinished;
+            }
+
             _harRecorder?.Attach(page);
             added = _pageAdded;
         }
@@ -408,6 +416,7 @@ public sealed partial class BrowserContext : IAsyncDisposable
             page.Response -= _forwardResponse;
             page.RequestFailed -= _forwardFailure;
             page.WebSocketCreated -= _forwardWebSocket;
+            page.RequestFinished -= _forwardFinished;
             _harRecorder?.Detach(page);
 
             lock (_gate)
@@ -424,6 +433,8 @@ public sealed partial class BrowserContext : IAsyncDisposable
     private void OnPageFailure(RequestFailure failure) => _requestFailed?.Invoke(failure);
 
     private void OnPageWebSocket(WebSocketInfo webSocket) => _webSocketCreated?.Invoke(webSocket);
+
+    private void OnPageFinished(PageResponse response) => _requestFinished?.Invoke(response);
 
     internal void RegisterServiceWorker(CdpSession session)
     {
@@ -506,6 +517,7 @@ public sealed partial class BrowserContext : IAsyncDisposable
                 page.Response -= _forwardResponse;
                 page.RequestFailed -= _forwardFailure;
                 page.WebSocketCreated -= _forwardWebSocket;
+                page.RequestFinished -= _forwardFinished;
             }
 
             lock (_gate)

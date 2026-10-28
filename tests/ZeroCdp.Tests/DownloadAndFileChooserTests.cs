@@ -99,6 +99,11 @@ public sealed class DownloadAndFileChooserTests : IAsyncLifetime
         Assert.True(download.TotalBytes >= download.ReceivedBytes);
         Assert.Null(await download.FailureAsync());
         Assert.Equal(download.Path, await download.PathAsync());
+        Assert.Equal("report.txt", await download.SuggestedFilenameAsync());
+        Assert.EndsWith("/payload", await download.UrlAsync(), StringComparison.Ordinal);
+
+        await download.CancelAsync();
+        Assert.True(download.IsCompleted);
 
         string destination = Path.Combine(_directory!, "saved.txt");
         await download.SaveAsAsync(destination, overwrite: true);

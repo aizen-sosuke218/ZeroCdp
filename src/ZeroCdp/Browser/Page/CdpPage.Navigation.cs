@@ -381,6 +381,107 @@ public sealed partial class CdpPage
         InvalidateWorlds();
     }
 
+    private readonly Lock _navigationWaitGate = new();
+
+    private readonly List<NavigationWaitRequest> _navigationWaitRequests = new();
+
+    /// <summary>
+    /// Waits for the main frame to commit a navigation. Call this before the action that navigates,
+    /// or use <see cref="RunAndWaitForNavigationAsync"/>.
+    /// </summary>
+    /// <returns>The committed URL.</returns>
+    public async ValueTask<string> WaitForNavigationAsync(
+        string? urlPattern = null,
+        WaitUntil waitUntil = WaitUntil.Load,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+        await EnableAsync(cancellationToken).ConfigureAwait(false);
+        TimeSpan effectiveTimeout = timeout ?? DefaultNavigationTimeout;
+        NavigationWaitRequest request = new(urlPattern);
+        lock (_navigationWaitGate)
+        {
+            _navigationWaitRequests.Add(request);
+        }
+
+        try
+        {
+            string url = await request.Completion.Task
+                .WaitAsync(effectiveTimeout, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (waitUntil != WaitUntil.Commit)
+            {
+                await WaitForLoadStateAsync(waitUntil, effectiveTimeout, cancellationToken).ConfigureAwait(false);
+            }
+
+            return url;
+        }
+        catch (TimeoutException)
+        {
+            throw new CdpTimeoutException(
+                $"No navigation{(urlPattern is null ? string.Empty : $" matching '{urlPattern}'")} " +
+                $"committed within {effectiveTimeout.TotalSeconds:0.##}s.");
+        }
+        finally
+        {
+            lock (_navigationWaitGate)
+            {
+                _navigationWaitRequests.Remove(request);
+            }
+        }
+    }
+
+    /// <summary>Playwright-style navigation overload using an options object.</summary>
+    public ValueTask<string> WaitForNavigationAsync(
+        PageWaitForNavigationOptions? options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return WaitForNavigationAsync(
+            options.Url,
+            options.WaitUntil?.ToWaitUntil() ?? WaitUntil.Load,
+            options.Timeout,
+            cancellationToken);
+    }
+
+    /// <summary>Runs an action and returns the URL of the navigation it triggers.</summary>
+    public async ValueTask<string> RunAndWaitForNavigationAsync(
+        Func<ValueTask> action,
+        string? urlPattern = null,
+        WaitUntil waitUntil = WaitUntil.Load,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ValueTask<string> waiting = WaitForNavigationAsync(urlPattern, waitUntil, timeout, cancellationToken);
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
+    }
+
+    private void OnMainFrameCommitted(string url)
+    {
+        NavigationWaitRequest[] waiters;
+        lock (_navigationWaitGate)
+        {
+            if (_navigationWaitRequests.Count == 0)
+            {
+                return;
+            }
+
+            waiters = _navigationWaitRequests.ToArray();
+        }
+
+        foreach (NavigationWaitRequest waiter in waiters)
+        {
+            if (waiter.UrlPattern is null || UrlGlob.IsMatch(waiter.UrlPattern, url))
+            {
+                waiter.Completion.TrySetResult(url);
+            }
+        }
+    }
+
     /// <summary>Playwright-style navigation overload using an options object.</summary>
     public ValueTask<GotoResult> GotoAsync(
         string url,
@@ -413,4 +514,14 @@ public sealed partial class CdpPage
         PageWaitForLoadStateOptions? options = null,
         CancellationToken cancellationToken = default)
         => WaitForLoadStateAsync(state.ToWaitUntil(), options?.Timeout, cancellationToken);
+}
+
+internal sealed class NavigationWaitRequest
+{
+    public NavigationWaitRequest(string? urlPattern) => UrlPattern = urlPattern;
+
+    public string? UrlPattern { get; }
+
+    public TaskCompletionSource<string> Completion { get; } =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 }

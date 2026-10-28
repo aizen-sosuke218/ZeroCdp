@@ -46,6 +46,17 @@ public sealed partial class CdpPage
         remove => _network.RequestFailed -= value;
     }
 
+    /// <summary>Raised on the reader thread when a response body has finished loading.</summary>
+    public event Action<PageResponse>? RequestFinished
+    {
+        add
+        {
+            _network.RequestFinished += value;
+            ScheduleNetworkEnable();
+        }
+        remove => _network.RequestFinished -= value;
+    }
+
     /// <summary>
     /// Raised on the reader thread when the page opens a WebSocket. Subscribing enables
     /// Network-domain observation, which is opt-in and does not inject page-visible script.
@@ -97,6 +108,10 @@ public sealed partial class CdpPage
         await _network.UnrouteAsync(urlPattern, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Removes every route registered on this page.</summary>
+    public ValueTask UnrouteAllAsync(CancellationToken cancellationToken = default)
+        => UnrouteAsync(urlPattern: null, cancellationToken);
+
     /// <summary>
     /// Replays responses from a HAR 1.2 archive for requests made by this page. Requests are
     /// matched by method and exact URL. Missing entries abort by default; set
@@ -145,6 +160,91 @@ public sealed partial class CdpPage
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
         return _network.WaitForResponseAsync(urlPattern, timeout ?? DefaultTimeout, cancellationToken);
+    }
+
+    /// <summary>Waits for the next response that finishes loading and matches a URL glob.</summary>
+    public ValueTask<PageResponse> WaitForRequestFinishedAsync(
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+        return _network.WaitForRequestFinishedAsync(urlPattern, timeout ?? DefaultTimeout, cancellationToken);
+    }
+
+    /// <summary>Waits for the next request that fails and matches a URL glob.</summary>
+    public ValueTask<RequestFailure> WaitForRequestFailedAsync(
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+        return _network.WaitForRequestFailedAsync(urlPattern, timeout ?? DefaultTimeout, cancellationToken);
+    }
+
+    /// <summary>Runs an action and returns the request it triggered.</summary>
+    public async ValueTask<PageRequest> RunAndWaitForRequestAsync(
+        Func<ValueTask> action,
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ValueTask<PageRequest> waiting = WaitForRequestAsync(urlPattern, timeout, cancellationToken);
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
+    }
+
+    /// <summary>Runs an action and returns the response it triggered.</summary>
+    public async ValueTask<PageResponse> RunAndWaitForResponseAsync(
+        Func<ValueTask> action,
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ValueTask<PageResponse> waiting = WaitForResponseAsync(urlPattern, timeout, cancellationToken);
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
+    }
+
+    /// <summary>Runs an action and returns the finished response it triggered.</summary>
+    public async ValueTask<PageResponse> RunAndWaitForRequestFinishedAsync(
+        Func<ValueTask> action,
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ValueTask<PageResponse> waiting = WaitForRequestFinishedAsync(urlPattern, timeout, cancellationToken);
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
+    }
+
+    /// <summary>Runs an action and returns the failed request it triggered.</summary>
+    public async ValueTask<RequestFailure> RunAndWaitForRequestFailedAsync(
+        Func<ValueTask> action,
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ValueTask<RequestFailure> waiting = WaitForRequestFailedAsync(urlPattern, timeout, cancellationToken);
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
+    }
+
+    /// <summary>Runs an action and returns the WebSocket it opened.</summary>
+    public async ValueTask<WebSocketInfo> RunAndWaitForWebSocketAsync(
+        Func<ValueTask> action,
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ValueTask<WebSocketInfo> waiting = WaitForWebSocketAsync(urlPattern, timeout, cancellationToken);
+        await action().ConfigureAwait(false);
+        return await waiting.ConfigureAwait(false);
     }
 
     /// <summary>Waits for the next WebSocket matching a URL glob.</summary>

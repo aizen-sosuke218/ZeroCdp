@@ -13,7 +13,7 @@ public sealed partial class CdpPage
 
         ViewportSize size = recordVideo.Size
             ?? options.Viewport
-            ?? ViewportSize.Default;
+            ?? ZeroCdp.Browser.ViewportSize.Default;
         VideoRecorder recorder = new(Screencast, recordVideo.Dir, size, recordVideo.FfmpegPath);
         _video = new Video(recorder);
         await recorder.StartAsync(cancellationToken).ConfigureAwait(false);

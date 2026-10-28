@@ -122,6 +122,28 @@ public sealed class Download
         return Path;
     }
 
+    /// <summary>Playwright-style async accessor for <see cref="Url"/>.</summary>
+    public ValueTask<string> UrlAsync() => ValueTask.FromResult(Url);
+
+    /// <summary>Playwright-style async accessor for <see cref="SuggestedFilename"/>.</summary>
+    public ValueTask<string> SuggestedFilenameAsync() => ValueTask.FromResult(SuggestedFilename);
+
+    /// <summary>Asks the browser to cancel an in-flight download.</summary>
+    public async ValueTask CancelAsync(CancellationToken cancellationToken = default)
+    {
+        if (State != DownloadState.InProgress)
+        {
+            return;
+        }
+
+        await Page.Context.Browser.Connection
+            .SendAsync<Protocol.Unit, Protocol.CancelDownloadParams>(
+                "Browser.cancelDownload"u8,
+                new Protocol.CancelDownloadParams(DownloadId, Page.Context.BrowserContextId),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Playwright-style async accessor for <see cref="Failure"/>.</summary>
     public ValueTask<string?> FailureAsync() => ValueTask.FromResult(Failure);
 

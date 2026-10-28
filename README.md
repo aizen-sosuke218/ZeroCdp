@@ -300,7 +300,12 @@ await context.GrantPermissionsAsync("geolocation", "https://example.com");
 await using CdpPage isolated = await context.NewPageAsync("https://example.com");
 
 CookiesResult cookies = await context.GetCookiesAsync();
+IReadOnlyList<CdpCookie> cookieList = await context.CookiesAsync();
+await context.AddCookiesAsync([new CdpCookie { Name = "sid", Value = "1", Url = "https://example.com/" }]);
+await context.ClearCookiesAsync(new BrowserContextClearCookiesOptions { Name = "sid" });
 await context.ClearCookiesAsync();
+await context.ClearGeolocationAsync();
+await context.UnrouteAllAsync(); // HTTP and WebSocket routes
 
 // Playwright-compatible storage state, including localStorage for HTTP(S) origins.
 StorageState state = await context.StorageStateAsync();
@@ -388,15 +393,26 @@ await page.RouteWebSocketAsync("ws://example.test/**", async socket =>
 
 Task<PageResponse> wait = page.WaitForResponseAsync("**/api/**");
 Task<PageResponse> contextWait = context.WaitForResponseAsync("**/api/**");
+Task<PageResponse> finishedWait = page.WaitForRequestFinishedAsync("**/api/**");
+Task<RequestFailure> failedWait = context.WaitForRequestFailedAsync("**/offline/**");
 await page.EvaluateAsync("fetch('/api/users')");
 PageResponse response = await wait;
 PageResponse sameResponse = await contextWait;
+PageResponse finished = await finishedWait;
 NetworkBody body = await page.GetResponseBodyAsync(response);
 
 context.Request += request => Console.WriteLine($"{request.Method} {request.Url}");
 context.Response += observed => Console.WriteLine($"{observed.Status} {observed.Url}");
+context.RequestFinished += done => Console.WriteLine($"{done.Status} {done.Url}");
 context.RequestFailed += failure => Console.WriteLine($"{failure.ErrorText} {failure.Url}");
 await context.EnableNetworkAsync();
+
+// Waits can also wrap the action that triggers them.
+PageResponse fetched = await page.RunAndWaitForRequestFinishedAsync(
+    () => page.EvaluateAsync("fetch('/api/users')"));
+string commit = await page.RunAndWaitForNavigationAsync(
+    () => page.Locator("#next").ClickAsync(),
+    waitUntil: WaitUntil.Commit);
 
 await page.ReloadAsync();
 await page.GoBackAsync();
@@ -405,9 +421,18 @@ await page.WaitForLoadStateAsync(WaitUntil.Load);
 ```
 
 Navigation helpers include `ReloadAsync`, `GoBackAsync`, `GoForwardAsync`,
-`GetNavigationHistoryAsync`, `WaitForUrlAsync`, `WaitForLoadStateAsync`, `SetContentAsync`,
-`SetViewportSizeAsync`, `EmulateColorSchemeAsync`, `PdfAsync`, `BringToFrontAsync`,
+`GetNavigationHistoryAsync`, `WaitForUrlAsync`, `WaitForNavigationAsync`, `WaitForLoadStateAsync`,
+`SetContentAsync`, `SetViewportSizeAsync` with the `ViewportSize` property,
+`EmulateColorSchemeAsync`, `PdfAsync`, `BringToFrontAsync`,
 `SetBypassCspAsync`, `SetGeolocationAsync`, offline/cache header controls, and response-body reads.
+`RunAndWaitForRequestAsync`, `RunAndWaitForResponseAsync`, `RunAndWaitForRequestFinishedAsync`,
+`RunAndWaitForRequestFailedAsync` and `RunAndWaitForWebSocketAsync` follow Playwright's naming on
+both page and context. Page, frame and handle surfaces also expose the selector read/state helpers
+(`GetAttributeAsync`, `InnerHTMLAsync`, `InnerTextAsync`, `TextContentAsync`, `InputValueAsync`,
+`IsVisibleAsync`, `IsHiddenAsync`, `IsCheckedAsync`, `IsEnabledAsync`, `IsDisabledAsync`,
+`IsEditableAsync`) and the handle actions (`TapAsync`, `SelectTextAsync`, `DispatchEventAsync`,
+`CheckAsync`/`UncheckAsync`/`SetCheckedAsync` with options). API responses expose `HeadersAsync`
+and `HeadersArrayAsync`, and `APIRequestContext.StorageStateAsync` captures cookies.
 
 ## Stealth model
 

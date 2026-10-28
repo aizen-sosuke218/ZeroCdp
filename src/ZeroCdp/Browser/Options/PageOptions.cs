@@ -26,6 +26,19 @@ public sealed class PageWaitForLoadStateOptions
     public TimeSpan? Timeout { get; init; }
 }
 
+/// <summary>Options for <see cref="CdpPage.WaitForNavigationAsync(PageWaitForNavigationOptions?, CancellationToken)"/>.</summary>
+public sealed class PageWaitForNavigationOptions
+{
+    /// <summary>URL glob the committed URL must match. Null matches any navigation.</summary>
+    public string? Url { get; init; }
+
+    /// <summary>Lifecycle point to wait for after the commit. Defaults to <see cref="WaitUntilState.Load"/>.</summary>
+    public WaitUntilState? WaitUntil { get; init; }
+
+    /// <summary>Navigation timeout. Null uses <see cref="CdpPage.DefaultNavigationTimeout"/>.</summary>
+    public TimeSpan? Timeout { get; init; }
+}
+
 /// <summary>Options for <see cref="CdpPage.WaitForSelectorAsync(string, PageWaitForSelectorOptions, CancellationToken)"/>.</summary>
 public sealed class PageWaitForSelectorOptions
 {

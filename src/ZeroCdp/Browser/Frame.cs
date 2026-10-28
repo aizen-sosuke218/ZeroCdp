@@ -210,7 +210,9 @@ public sealed class Frame
         string selector,
         ClickOptions? options = null,
         CancellationToken cancellationToken = default)
-        => Locator(selector).DblClickAsync(cancellationToken);
+        => options is null
+            ? Locator(selector).DblClickAsync(cancellationToken)
+            : Locator(selector).DblClickAsync(options, cancellationToken);
 
     /// <summary>Legacy Playwright frame-level fill.</summary>
     public ValueTask FillAsync(
@@ -307,6 +309,19 @@ public sealed class Frame
         CancellationToken cancellationToken = default)
         => await Locator(source).DragToAsync(Locator(target), cancellationToken).ConfigureAwait(false);
 
+    /// <summary>Playwright-style frame-level drag-and-drop with action options.</summary>
+    public async ValueTask DragAndDropAsync(
+        string source,
+        string target,
+        LocatorDragToOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        await Locator(source)
+            .DragToAsync(Locator(target), options, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Legacy Playwright frame-level dispatch-event.</summary>
     public ValueTask<bool> DispatchEventAsync(
         string selector,
@@ -315,6 +330,127 @@ public sealed class Frame
         bool cancelable = true,
         CancellationToken cancellationToken = default)
         => Locator(selector).DispatchEventAsync(type, bubbles, cancelable, cancellationToken);
+
+    /// <summary>
+    /// Returns a handle to the iframe/frame element that owns this frame, or null for the main
+    /// frame.
+    /// </summary>
+    public async ValueTask<ElementHandle?> FrameElementAsync(CancellationToken cancellationToken = default)
+    {
+        if (ParentFrame is null)
+        {
+            return null;
+        }
+
+        if (IsDetached)
+        {
+            throw new CdpException($"Frame '{FrameId}' is detached.");
+        }
+
+        return await _page.FrameElementHandleAsync(FrameId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Creates web-first assertions for a selector in this frame.</summary>
+    public LocatorAssertions Expect(string selector)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(selector);
+        return Locator(selector).Expect();
+    }
+
+    /// <summary>Legacy Playwright frame-level focus.</summary>
+    public ValueTask FocusAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).FocusAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level attribute read.</summary>
+    public ValueTask<string?> GetAttributeAsync(
+        string selector,
+        string name,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).GetAttributeAsync(name, cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level <c>innerHTML</c> read.</summary>
+    public ValueTask<string> InnerHTMLAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).InnerHTMLAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level <c>innerText</c> read.</summary>
+    public ValueTask<string> InnerTextAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).InnerTextAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level <c>value</c> read.</summary>
+    public ValueTask<string?> InputValueAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).InputValueAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level <c>textContent</c> read.</summary>
+    public ValueTask<string> TextContentAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).TextContentAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level checked-state probe.</summary>
+    public ValueTask<bool> IsCheckedAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsCheckedAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level disabled-state probe.</summary>
+    public ValueTask<bool> IsDisabledAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsDisabledAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level editable-state probe.</summary>
+    public ValueTask<bool> IsEditableAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsEditableAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level enabled-state probe.</summary>
+    public ValueTask<bool> IsEnabledAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsEnabledAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level hidden-state probe.</summary>
+    public ValueTask<bool> IsHiddenAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsHiddenAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level visible-state probe.</summary>
+    public ValueTask<bool> IsVisibleAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsVisibleAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright frame-level set-checked.</summary>
+    public ValueTask SetCheckedAsync(
+        string selector,
+        bool checkedState,
+        LocatorCheckOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => options is null
+            ? Locator(selector).SetCheckedAsync(checkedState, cancellationToken)
+            : Locator(selector).SetCheckedAsync(checkedState, options, cancellationToken);
 
     /// <summary>Evaluates JavaScript in this frame's isolated world.</summary>
     public async ValueTask<EvaluationResult> EvaluateAsync(

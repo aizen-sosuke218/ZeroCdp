@@ -24,6 +24,7 @@ public sealed partial class CdpPage
                 new SetDeviceMetricsOverrideParams(viewport.Width, viewport.Height, deviceScaleFactor, mobile),
                 cancellationToken)
             .ConfigureAwait(false);
+        _viewportSize = viewport;
     }
 
     /// <summary>Emulates the <c>prefers-color-scheme</c> media feature.</summary>

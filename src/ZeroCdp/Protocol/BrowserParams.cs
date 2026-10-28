@@ -52,3 +52,28 @@ public readonly struct ResetPermissionsParams : ICdpCommandParams
         }
     }
 }
+
+/// <summary>Parameters of <c>Browser.cancelDownload</c>.</summary>
+public readonly struct CancelDownloadParams : ICdpCommandParams
+{
+    private readonly string _downloadKey;
+    private readonly string? _browserContextId;
+
+    public CancelDownloadParams(string downloadKey, string? browserContextId = null)
+    {
+        _downloadKey = downloadKey;
+        _browserContextId = browserContextId;
+    }
+
+    public void Write(ref CommandWriter writer)
+    {
+        writer.Name("guid"u8);
+        writer.StringValue(_downloadKey);
+
+        if (!string.IsNullOrEmpty(_browserContextId))
+        {
+            writer.Name("browserContextId"u8);
+            writer.StringValue(_browserContextId);
+        }
+    }
+}

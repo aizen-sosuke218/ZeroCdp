@@ -47,6 +47,13 @@ internal sealed class PageState : ICdpEventSink
     /// <summary>Called when the main frame commits a new document.</summary>
     public Action? MainFrameNavigated { get; set; }
 
+    /// <summary>
+    /// Called when the main frame commits a navigation, including same-document navigations, with
+    /// the committed URL. Unlike <see cref="MainFrameNavigated"/> this is observation-only: it does
+    /// not invalidate the isolated world.
+    /// </summary>
+    public Action<string>? MainFrameCommitted { get; set; }
+
     /// <summary>Called when the main frame's load event fires.</summary>
     public Action? Load { get; set; }
 
@@ -369,6 +376,7 @@ internal sealed class PageState : ICdpEventSink
         {
             Signal(SignalKind.Commit);
             MainFrameNavigated?.Invoke();
+            MainFrameCommitted?.Invoke(frame.Url);
         }
     }
 
@@ -417,6 +425,7 @@ internal sealed class PageState : ICdpEventSink
         if (IsMainFrame(Encoding.UTF8.GetBytes(frameId)))
         {
             Signal(SignalKind.Commit);
+            MainFrameCommitted?.Invoke(url ?? string.Empty);
         }
     }
 

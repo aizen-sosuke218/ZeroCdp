@@ -13,6 +13,14 @@ public sealed partial class BrowserContext
                 cancellationToken)
             .ConfigureAwait(false);
 
+    /// <summary>Playwright-style alias for <see cref="GetCookiesAsync"/>.</summary>
+    public async ValueTask<IReadOnlyList<CdpCookie>> CookiesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        CookiesResult result = await GetCookiesAsync(cancellationToken).ConfigureAwait(false);
+        return result.Cookies;
+    }
+
     /// <summary>Stores cookies in this context's jar.</summary>
     public async ValueTask SetCookiesAsync(
         IReadOnlyList<CdpCookie> cookies,
@@ -27,6 +35,12 @@ public sealed partial class BrowserContext
             .ConfigureAwait(false);
     }
 
+    /// <summary>Playwright-style alias for <see cref="SetCookiesAsync"/>.</summary>
+    public ValueTask AddCookiesAsync(
+        IReadOnlyList<CdpCookie> cookies,
+        CancellationToken cancellationToken = default)
+        => SetCookiesAsync(cookies, cancellationToken);
+
     /// <summary>Clears every cookie in this context.</summary>
     public async ValueTask ClearCookiesAsync(CancellationToken cancellationToken = default)
         => await _browser.Connection
@@ -35,6 +49,50 @@ public sealed partial class BrowserContext
                 new StorageClearCookiesParams(BrowserContextId),
                 cancellationToken)
             .ConfigureAwait(false);
+
+    /// <summary>
+    /// Clears cookies matching the supplied filters. Unset filters match every cookie, so this
+    /// also acts as an unfiltered clear when <paramref name="options"/> is null.
+    /// </summary>
+    /// <remarks>
+    /// Chromium exposes no filtered clear, so matching cookies are removed by clearing the jar and
+    /// restoring the rest, which is how Playwright implements the same operation.
+    /// </remarks>
+    public async ValueTask ClearCookiesAsync(
+        BrowserContextClearCookiesOptions? options,
+        CancellationToken cancellationToken = default)
+    {
+        if (options is null)
+        {
+            await ClearCookiesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        CookiesResult existing = await GetCookiesAsync(cancellationToken).ConfigureAwait(false);
+        List<CdpCookie> keep = new();
+        foreach (CdpCookie cookie in existing.Cookies)
+        {
+            bool matches = (options.Name is null
+                    || string.Equals(cookie.Name, options.Name, StringComparison.Ordinal))
+                && (options.Domain is null
+                    || string.Equals(
+                        cookie.Domain.TrimStart('.'),
+                        options.Domain.TrimStart('.'),
+                        StringComparison.OrdinalIgnoreCase))
+                && (options.Path is null
+                    || string.Equals(cookie.Path, options.Path, StringComparison.Ordinal));
+            if (!matches)
+            {
+                keep.Add(cookie);
+            }
+        }
+
+        await ClearCookiesAsync(cancellationToken).ConfigureAwait(false);
+        if (keep.Count > 0)
+        {
+            await SetCookiesAsync(keep, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Captures cookies plus <c>localStorage</c> for every HTTP(S) page currently open in this
@@ -349,5 +407,9 @@ public sealed partial class BrowserContext
             }
         }
     }
+
+    /// <summary>Clears the geolocation override for every page currently in this context.</summary>
+    public ValueTask ClearGeolocationAsync(CancellationToken cancellationToken = default)
+        => SetGeolocationAsync(geolocation: null, cancellationToken);
 
 }

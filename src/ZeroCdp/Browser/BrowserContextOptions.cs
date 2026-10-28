@@ -239,3 +239,16 @@ public sealed class BrowserContextOptions
         ArgumentNullException.ThrowIfNull(ExtraHttpHeaders);
     }
 }
+
+/// <summary>
+/// Optional filters for <see cref="BrowserContext.ClearCookiesAsync(BrowserContextClearCookiesOptions?, CancellationToken)"/>.
+/// Unset fields match every cookie.
+/// </summary>
+public sealed class BrowserContextClearCookiesOptions
+{
+    public string? Name { get; init; }
+
+    public string? Domain { get; init; }
+
+    public string? Path { get; init; }
+}

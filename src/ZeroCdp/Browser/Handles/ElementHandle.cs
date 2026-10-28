@@ -51,6 +51,9 @@ public sealed class ElementHandle : JSHandle
         SetObjectId(resolved.ObjectId!);
     }
 
+    protected override ValueTask EnsureResolvedAsync(CancellationToken cancellationToken)
+        => EnsureObjectIdAsync(cancellationToken);
+
     internal async ValueTask<JSHandle?> QuerySelectorHandleAsync(
         string selector,
         CancellationToken cancellationToken)
@@ -269,6 +272,42 @@ public sealed class ElementHandle : JSHandle
     public async ValueTask ScrollIntoViewIfNeededAsync(CancellationToken cancellationToken = default)
         => await Page.ScrollToNodeAsync(_nodeId, cancellationToken).ConfigureAwait(false);
 
+    public async ValueTask TapAsync(CancellationToken cancellationToken = default)
+    {
+        await Page.ScrollToNodeAsync(_nodeId, cancellationToken).ConfigureAwait(false);
+        (double x, double y) = await Page.GetNodeCenterAsync(_nodeId, cancellationToken)
+            .ConfigureAwait(false);
+        await Page.Touchscreen.TapAsync(x, y, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Playwright-style tap overload using an options object.</summary>
+    public async ValueTask TapAsync(
+        LocatorTapOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        await Page.ScrollToNodeAsync(_nodeId, cancellationToken).ConfigureAwait(false);
+        (double x, double y) = await Page.GetNodeCenterAsync(_nodeId, cancellationToken)
+            .ConfigureAwait(false);
+        if (options.Position is { } position)
+        {
+            BoundingBox? box = await Page.GetNodeBoundingBoxAsync(_nodeId, cancellationToken)
+                .ConfigureAwait(false);
+            if (box is { } value)
+            {
+                x = value.X + position.X;
+                y = value.Y + position.Y;
+            }
+        }
+
+        if (options.Trial)
+        {
+            return;
+        }
+
+        await Page.Touchscreen.TapAsync(x, y, (int)options.Modifiers, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask CheckAsync(CancellationToken cancellationToken = default)
     {
         if (await Page.IsCheckedAsync(_nodeId, cancellationToken).ConfigureAwait(false))
@@ -279,6 +318,15 @@ public sealed class ElementHandle : JSHandle
         await ClickAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Playwright-style check overload using an options object.</summary>
+    public ValueTask CheckAsync(
+        LocatorCheckOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return SetCheckedCoreAsync(desired: true, options, cancellationToken);
+    }
+
     public async ValueTask UncheckAsync(CancellationToken cancellationToken = default)
     {
         if (!await Page.IsCheckedAsync(_nodeId, cancellationToken).ConfigureAwait(false))
@@ -287,6 +335,15 @@ public sealed class ElementHandle : JSHandle
         }
 
         await ClickAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Playwright-style uncheck overload using an options object.</summary>
+    public ValueTask UncheckAsync(
+        LocatorCheckOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return SetCheckedCoreAsync(desired: false, options, cancellationToken);
     }
 
     public async ValueTask SetCheckedAsync(
@@ -301,6 +358,37 @@ public sealed class ElementHandle : JSHandle
         {
             await UncheckAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Playwright-style set-checked overload using an options object.</summary>
+    public ValueTask SetCheckedAsync(
+        bool checkedState,
+        LocatorCheckOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return SetCheckedCoreAsync(checkedState, options, cancellationToken);
+    }
+
+    private async ValueTask SetCheckedCoreAsync(
+        bool desired,
+        LocatorCheckOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (await Page.IsCheckedAsync(_nodeId, cancellationToken).ConfigureAwait(false) == desired)
+        {
+            return;
+        }
+
+        await ClickAsync(
+                new LocatorClickOptions
+                {
+                    Force = options.Force,
+                    Trial = options.Trial,
+                    Position = options.Position,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<string[]> SelectOptionAsync(
@@ -322,6 +410,36 @@ public sealed class ElementHandle : JSHandle
 
     public async ValueTask<string> InnerTextAsync(CancellationToken cancellationToken = default)
         => await Page.GetInnerTextAsync(_nodeId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Playwright-style <c>innerHTML</c> of the element.</summary>
+    public async ValueTask<string> InnerHTMLAsync(CancellationToken cancellationToken = default)
+    {
+        EvaluationResult result = await Page
+            .EvaluateOnNodeAsync(_nodeId, "node => node.innerHTML", cancellationToken)
+            .ConfigureAwait(false);
+        return result.Value.StringValue ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Dispatches a DOM event on the element. Events are untrusted, matching
+    /// <c>Element.dispatchEvent</c>; use <see cref="ClickAsync(LocatorClickOptions?, CancellationToken)"/>
+    /// for trusted input.
+    /// </summary>
+    public async ValueTask<bool> DispatchEventAsync(
+        string type,
+        bool bubbles = true,
+        bool cancelable = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(type);
+        return await Page
+            .DispatchNodeEventAsync(_nodeId, type, bubbles, cancelable, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Selects the text of an input, textarea or contenteditable element.</summary>
+    public async ValueTask SelectTextAsync(CancellationToken cancellationToken = default)
+        => await Page.SelectNodeTextAsync(_nodeId, cancellationToken).ConfigureAwait(false);
 
     public async ValueTask<string?> GetAttributeAsync(
         string name,
@@ -438,7 +556,7 @@ public sealed class ElementHandle : JSHandle
             && Math.Abs(first.Value.Height - value.Height) < 0.5;
     }
 
-    private async ValueTask<bool> IsEnabledAsync(CancellationToken cancellationToken)
+    private async ValueTask<bool> IsEnabledCoreAsync(CancellationToken cancellationToken)
     {
         EvaluationResult result = await Page.NodePropertyAsync(
                 _nodeId,
@@ -448,7 +566,7 @@ public sealed class ElementHandle : JSHandle
         return !result.Threw && result.Value.TryGetBoolean(out bool enabled) && enabled;
     }
 
-    private async ValueTask<bool> IsEditableAsync(CancellationToken cancellationToken)
+    private async ValueTask<bool> IsEditableCoreAsync(CancellationToken cancellationToken)
     {
         EvaluationResult result = await Page.NodePropertyAsync(
                 _nodeId,
@@ -457,4 +575,16 @@ public sealed class ElementHandle : JSHandle
             .ConfigureAwait(false);
         return !result.Threw && result.Value.TryGetBoolean(out bool editable) && editable;
     }
+
+    /// <summary>Whether the element is not disabled.</summary>
+    public ValueTask<bool> IsEnabledAsync(CancellationToken cancellationToken = default)
+        => IsEnabledCoreAsync(cancellationToken);
+
+    /// <summary>Whether the element is disabled.</summary>
+    public async ValueTask<bool> IsDisabledAsync(CancellationToken cancellationToken = default)
+        => !await IsEnabledCoreAsync(cancellationToken).ConfigureAwait(false);
+
+    /// <summary>Whether the element is editable.</summary>
+    public ValueTask<bool> IsEditableAsync(CancellationToken cancellationToken = default)
+        => IsEditableCoreAsync(cancellationToken);
 }

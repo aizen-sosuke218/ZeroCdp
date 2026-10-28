@@ -44,6 +44,13 @@ public sealed partial class BrowserContext
         await RefreshRoutesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Removes every HTTP and WebSocket route registered on this context.</summary>
+    public async ValueTask UnrouteAllAsync(CancellationToken cancellationToken = default)
+    {
+        await UnrouteAsync(urlPattern: null, cancellationToken).ConfigureAwait(false);
+        await UnrouteWebSocketAsync(urlPattern: null, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Replays responses from a HAR 1.2 archive for requests in this context. Requests are matched
     /// by method and exact URL. By default a missing entry aborts the request; use

@@ -272,6 +272,15 @@ Các mục Patchright không dùng hoặc không hỗ trợ được đánh dấ
   nhau, Playwright options/enums, sample thực tế; tổng **181 test**, dispatch vẫn **0 B/op**.
   Test OOPIF dùng hai `LocalHttpServer` khác site (`127.0.0.1` và `[::1]`) để Chromium thực sự tách
   process; test kiểm tra locator, fill, click, `BoundingBoxAsync`, evaluate và transform lồng nhau.
+- Rà soát parity Playwright lần cuối: bổ sung handle action/state (`TapAsync`, `SelectTextAsync`,
+  `DispatchEventAsync`, `InnerHTMLAsync`, `CheckAsync`/`UncheckAsync`/`SetCheckedAsync` với options,
+  `IsEnabledAsync`/`IsDisabledAsync`/`IsEditableAsync`), `Worker.EvaluateHandleAsync`, waiter
+  `WaitForRequestFinishedAsync`/`WaitForRequestFailedAsync` cùng event `RequestFinished`,
+  `WaitForNavigationAsync`/`RunAndWaitForNavigationAsync`, `ViewportSize`, `UnrouteAllAsync`,
+  `Download.CancelAsync`/`UrlAsync`/`SuggestedFilenameAsync`, cookie context có filter
+  (`CookiesAsync`, `AddCookiesAsync`, `ClearCookiesAsync(options)`, `ClearGeolocationAsync`),
+  `APIResponse.HeadersAsync`/`HeadersArrayAsync`, `APIRequestContext.StorageStateAsync` và
+  `DragAndDropAsync`. Tổng **228 test**, dispatch vẫn **0 B/op**.
 
 **Việc tối ưu còn lại đã biết**: scan JSON hiện là scalar (~1.5 ns/byte). Với frame lớn (>8 KB)
 viết lại bằng `Vector256` sẽ có lợi; với frame CDP thường gặp thì lợi ích nhỏ vì Chrome là nút cổ chai.

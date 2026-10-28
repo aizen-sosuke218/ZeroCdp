@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ZeroCdp.Protocol;
+using ZeroCdp.Runtime;
 
 namespace ZeroCdp.Browser;
 
@@ -11,6 +12,8 @@ public class JSHandle : IAsyncDisposable
 {
     private readonly CdpPage _page;
     private readonly int _contextId;
+    private readonly Func<string, string, string, bool, CancellationToken, ValueTask<EvaluationResult>>? _call;
+    private readonly Func<string, CancellationToken, ValueTask>? _release;
     protected string? ObjectIdInternal { get; set; }
 
     private RemoteObject _value;
@@ -34,9 +37,21 @@ public class JSHandle : IAsyncDisposable
     }
 
     internal JSHandle(CdpPage page, RemoteObject value, int contextId)
+        : this(page, value, contextId, call: null, release: null)
+    {
+    }
+
+    private JSHandle(
+        CdpPage page,
+        RemoteObject value,
+        int contextId,
+        Func<string, string, string, bool, CancellationToken, ValueTask<EvaluationResult>>? call,
+        Func<string, CancellationToken, ValueTask>? release)
     {
         _page = page;
         _contextId = contextId;
+        _call = call;
+        _release = release;
         _value = value;
         ObjectIdInternal = value.ObjectId;
     }
@@ -52,11 +67,38 @@ public class JSHandle : IAsyncDisposable
         };
     }
 
+    private ValueTask<EvaluationResult> CallOnObjectAsync(
+        string functionDeclaration,
+        string argumentsJson,
+        bool returnByReference,
+        CancellationToken cancellationToken)
+        => _call is null
+            ? _page.CallOnObjectAsync(
+                ObjectIdInternal!,
+                _contextId,
+                functionDeclaration,
+                argumentsJson,
+                returnByReference,
+                cancellationToken)
+            : _call(
+                ObjectIdInternal!,
+                functionDeclaration,
+                argumentsJson,
+                returnByReference,
+                cancellationToken);
+
     internal CdpPage Page => _page;
 
     internal int ContextId => _contextId;
 
     internal string? ObjectId => ObjectIdInternal;
+
+    /// <summary>
+    /// Resolves a lazily-bound handle to an object id. Element handles override this; plain
+    /// handles are already bound.
+    /// </summary>
+    protected virtual ValueTask EnsureResolvedAsync(CancellationToken cancellationToken)
+        => ValueTask.CompletedTask;
 
     /// <summary>True after <see cref="DisposeAsync"/> has been called.</summary>
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
@@ -72,7 +114,7 @@ public class JSHandle : IAsyncDisposable
             return element;
         }
 
-        if (ObjectIdInternal is null)
+        if (ObjectIdInternal is null || _call is not null)
         {
             return null;
         }
@@ -105,8 +147,15 @@ public class JSHandle : IAsyncDisposable
 
         try
         {
-            await _page.ReleaseObjectAsync(ObjectIdInternal, _contextId, CancellationToken.None)
-                .ConfigureAwait(false);
+            if (_release is not null)
+            {
+                await _release(ObjectIdInternal, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await _page.ReleaseObjectAsync(ObjectIdInternal, _contextId, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
         }
         catch (CdpException)
         {
@@ -124,15 +173,14 @@ public class JSHandle : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(expression);
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        await EnsureResolvedAsync(cancellationToken).ConfigureAwait(false);
         if (ObjectIdInternal is null)
         {
             throw new CdpException("The handle refers to a primitive value and cannot be called.");
         }
 
         string function = BuildFunction(expression);
-        EvaluationResult result = await _page.CallOnObjectAsync(
-                ObjectIdInternal,
-                _contextId,
+        EvaluationResult result = await CallOnObjectAsync(
                 function,
                 "[]",
                 returnByReference: false,
@@ -148,21 +196,22 @@ public class JSHandle : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(expression);
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        await EnsureResolvedAsync(cancellationToken).ConfigureAwait(false);
         if (ObjectIdInternal is null)
         {
             throw new CdpException("The handle refers to a primitive value and cannot be called.");
         }
 
         string function = BuildFunction(expression);
-        EvaluationResult result = await _page.CallOnObjectAsync(
-                ObjectIdInternal,
-                _contextId,
+        EvaluationResult result = await CallOnObjectAsync(
                 function,
                 "[]",
                 returnByReference: true,
                 cancellationToken)
             .ConfigureAwait(false);
-        return FromResult(_page, result, _contextId);
+        return _call is null
+            ? FromResult(_page, result, _contextId)
+            : FromResult(_page, result, _contextId, _call, _release!);
     }
 
     /// <summary>Reads one property and returns a handle to it.</summary>
@@ -172,20 +221,21 @@ public class JSHandle : IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrEmpty(propertyName);
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        await EnsureResolvedAsync(cancellationToken).ConfigureAwait(false);
         if (ObjectIdInternal is null)
         {
             throw new CdpException("The handle refers to a primitive value and has no properties.");
         }
 
-        EvaluationResult result = await _page.CallOnObjectAsync(
-                ObjectIdInternal,
-                _contextId,
+        EvaluationResult result = await CallOnObjectAsync(
                 "function(name) { return this[name]; }",
                 JsText.StringArguments([propertyName]),
                 returnByReference: true,
                 cancellationToken)
             .ConfigureAwait(false);
-        return FromResult(_page, result, _contextId);
+        return _call is null
+            ? FromResult(_page, result, _contextId)
+            : FromResult(_page, result, _contextId, _call, _release!);
     }
 
     /// <summary>Reads every enumerable own property as a handle.</summary>
@@ -193,14 +243,13 @@ public class JSHandle : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        await EnsureResolvedAsync(cancellationToken).ConfigureAwait(false);
         if (ObjectIdInternal is null)
         {
             return new Dictionary<string, JSHandle>(StringComparer.Ordinal);
         }
 
-        EvaluationResult namesResult = await _page.CallOnObjectAsync(
-                ObjectIdInternal,
-                _contextId,
+        EvaluationResult namesResult = await CallOnObjectAsync(
                 "function() { return JSON.stringify(Object.keys(this)); }",
                 "[]",
                 returnByReference: false,
@@ -220,14 +269,13 @@ public class JSHandle : IAsyncDisposable
     public async ValueTask<JsonElement?> JsonValueAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        await EnsureResolvedAsync(cancellationToken).ConfigureAwait(false);
         if (ObjectIdInternal is null)
         {
             return ParseValue(_value);
         }
 
-        EvaluationResult result = await _page.CallOnObjectAsync(
-                ObjectIdInternal,
-                _contextId,
+        EvaluationResult result = await CallOnObjectAsync(
                 "function() { return JSON.stringify(this); }",
                 "[]",
                 returnByReference: false,
@@ -247,14 +295,13 @@ public class JSHandle : IAsyncDisposable
     public async ValueTask<string> ToStringAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
+        await EnsureResolvedAsync(cancellationToken).ConfigureAwait(false);
         if (ObjectIdInternal is null)
         {
             return _value.StringValue ?? _value.UnserializableValue ?? _value.Description;
         }
 
-        EvaluationResult result = await _page.CallOnObjectAsync(
-                ObjectIdInternal,
-                _contextId,
+        EvaluationResult result = await CallOnObjectAsync(
                 "function() { return String(this); }",
                 "[]",
                 returnByReference: false,
@@ -271,6 +318,58 @@ public class JSHandle : IAsyncDisposable
         }
 
         return new JSHandle(page, result.Value, contextId);
+    }
+
+    private static JSHandle FromResult(
+        CdpPage page,
+        EvaluationResult result,
+        int contextId,
+        Func<string, string, string, bool, CancellationToken, ValueTask<EvaluationResult>> call,
+        Func<string, CancellationToken, ValueTask> release)
+    {
+        if (result.Threw)
+        {
+            throw new CdpException(result.ExceptionSummary ?? "The JavaScript expression threw.");
+        }
+
+        return new JSHandle(page, result.Value, contextId, call, release);
+    }
+
+    /// <summary>
+    /// Creates a handle bound to a worker session. Worker object ids are session-scoped, so
+    /// evaluation and release must go through that session rather than the page's world.
+    /// </summary>
+    internal static JSHandle FromWorkerResult(
+        CdpPage page,
+        EvaluationResult result,
+        CdpSession session)
+    {
+        if (result.Threw)
+        {
+            throw new CdpException(result.ExceptionSummary ?? "The JavaScript expression threw.");
+        }
+
+        return new JSHandle(
+            page,
+            result.Value,
+            contextId: 0,
+            (objectId, functionDeclaration, argumentsJson, returnByReference, cancellationToken) =>
+                session.SendAsync<EvaluationResult, CallFunctionOnObjectParams>(
+                    "Runtime.callFunctionOn"u8,
+                    new CallFunctionOnObjectParams(
+                        functionDeclaration,
+                        objectId,
+                        argumentsJson,
+                        returnByValue: !returnByReference),
+                    cancellationToken),
+            async (objectId, cancellationToken) =>
+            {
+                await session.SendAsync<Unit, ReleaseObjectParams>(
+                        "Runtime.releaseObject"u8,
+                        new ReleaseObjectParams(objectId),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            });
     }
 
     private static string BuildFunction(string expression)

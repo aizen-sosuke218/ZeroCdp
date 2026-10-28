@@ -158,6 +158,43 @@ public sealed partial class BrowserContext
         }
     }
 
+    /// <summary>Raised on the reader thread when a response finishes loading in any context page.</summary>
+    public event Action<PageResponse>? RequestFinished
+    {
+        add
+        {
+            lock (_pageEventGate)
+            {
+                bool first = _requestFinished is null;
+                _requestFinished += value;
+                if (first)
+                {
+                    foreach (CdpPage page in Pages)
+                    {
+                        if (!page.IsClosed)
+                        {
+                            page.RequestFinished += _forwardFinished;
+                        }
+                    }
+                }
+            }
+        }
+        remove
+        {
+            lock (_pageEventGate)
+            {
+                _requestFinished -= value;
+                if (_requestFinished is null)
+                {
+                    foreach (CdpPage page in Pages)
+                    {
+                        page.RequestFinished -= _forwardFinished;
+                    }
+                }
+            }
+        }
+    }
+
     /// <summary>Playwright-style alias for <see cref="WebSocketCreated"/>.</summary>
     public event Action<WebSocketInfo>? WebSocket
     {
@@ -246,6 +283,78 @@ public sealed partial class BrowserContext
         finally
         {
             Response -= handler;
+        }
+    }
+
+    /// <summary>Waits for the next response that finishes loading in any context page.</summary>
+    public async ValueTask<PageResponse> WaitForRequestFinishedAsync(
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        TaskCompletionSource<PageResponse> completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<PageResponse> handler = response =>
+        {
+            if (urlPattern is null || UrlGlob.IsMatch(urlPattern, response.Url))
+            {
+                completion.TrySetResult(response);
+            }
+        };
+
+        RequestFinished += handler;
+        try
+        {
+            await EnableNetworkAsync(cancellationToken).ConfigureAwait(false);
+            return await completion.Task
+                .WaitAsync(timeout ?? DefaultWaitTimeout, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw new CdpTimeoutException(
+                $"No finished context request matching '{urlPattern ?? "*"}' arrived within "
+                + $"{(timeout ?? DefaultWaitTimeout).TotalSeconds:0.##}s.");
+        }
+        finally
+        {
+            RequestFinished -= handler;
+        }
+    }
+
+    /// <summary>Waits for the next request that fails in any context page.</summary>
+    public async ValueTask<RequestFailure> WaitForRequestFailedAsync(
+        string? urlPattern = null,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        TaskCompletionSource<RequestFailure> completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Action<RequestFailure> handler = failure =>
+        {
+            if (urlPattern is null || UrlGlob.IsMatch(urlPattern, failure.Url))
+            {
+                completion.TrySetResult(failure);
+            }
+        };
+
+        RequestFailed += handler;
+        try
+        {
+            await EnableNetworkAsync(cancellationToken).ConfigureAwait(false);
+            return await completion.Task
+                .WaitAsync(timeout ?? DefaultWaitTimeout, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw new CdpTimeoutException(
+                $"No failed context request matching '{urlPattern ?? "*"}' arrived within "
+                + $"{(timeout ?? DefaultWaitTimeout).TotalSeconds:0.##}s.");
+        }
+        finally
+        {
+            RequestFailed -= handler;
         }
     }
 

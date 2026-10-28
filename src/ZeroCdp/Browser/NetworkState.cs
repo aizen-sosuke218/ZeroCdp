@@ -95,6 +95,9 @@ internal sealed partial class NetworkState : IDisposable
 
     public event Action<RequestFailure>? RequestFailed;
 
+    /// <summary>Raised when a response body has finished loading.</summary>
+    public event Action<PageResponse>? RequestFinished;
+
     public event Action<WebSocketInfo>? WebSocketCreated;
 
     public async ValueTask EnsureNetworkEnabledAsync(CancellationToken cancellationToken)
@@ -246,6 +249,10 @@ internal sealed partial class NetworkState : IDisposable
                 }
 
                 response?.MarkFinished();
+                if (response is not null)
+                {
+                    RequestFinished?.Invoke(response);
+                }
             }
         }
     }

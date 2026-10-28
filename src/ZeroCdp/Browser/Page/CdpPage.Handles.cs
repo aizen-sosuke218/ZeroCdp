@@ -36,6 +36,40 @@ public sealed partial class CdpPage
         return new JSHandle(this, result.Value.ObjectId, contextId, result.Value.Description);
     }
 
+    /// <summary>
+    /// Evaluates an expression with an element as <c>this</c> and keeps the result as a handle.
+    /// </summary>
+    internal async ValueTask<JSHandle> EvaluateHandleOnNodeAsync(
+        long nodeId,
+        string expression,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        FrameContext context = ContextForNode(nodeId);
+        ResolveNodeResult resolved = await ResolveNodeAsync(nodeId, cancellationToken).ConfigureAwait(false);
+        string function = "function() { const fn = (" + expression + "); return typeof fn === 'function' ? fn(this) : fn; }";
+
+        EvaluationResult result = await context.World
+            .CallFunctionOnObjectByReferenceAsync(resolved.ObjectId!, function, "[]", cancellationToken)
+            .ConfigureAwait(false);
+
+        JSHandle handle = CreateHandle(result, context.Id);
+        if (!string.Equals(handle.ObjectId, resolved.ObjectId, StringComparison.Ordinal))
+        {
+            try
+            {
+                await ReleaseObjectAsync(resolved.ObjectId!, context.Id, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (CdpException)
+            {
+                // Navigation or page close already released the object.
+            }
+        }
+
+        return handle;
+    }
+
     internal async ValueTask<EvaluationResult> CallOnObjectAsync(
         string objectId,
         int contextId,

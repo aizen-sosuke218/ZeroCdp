@@ -115,6 +115,19 @@ public sealed partial class CdpPage
         CancellationToken cancellationToken = default)
         => await Locator(source).DragToAsync(Locator(target), cancellationToken).ConfigureAwait(false);
 
+    /// <summary>Playwright-style page-level drag-and-drop with action options.</summary>
+    public async ValueTask DragAndDropAsync(
+        string source,
+        string target,
+        LocatorDragToOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        await Locator(source)
+            .DragToAsync(Locator(target), options, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>Legacy Playwright page-level dispatch-event.</summary>
     public ValueTask<bool> DispatchEventAsync(
         string selector,
@@ -123,4 +136,99 @@ public sealed partial class CdpPage
         bool cancelable = true,
         CancellationToken cancellationToken = default)
         => Locator(selector).DispatchEventAsync(type, bubbles, cancelable, cancellationToken);
+
+    /// <summary>Legacy Playwright page-level set-checked.</summary>
+    public ValueTask SetCheckedAsync(
+        string selector,
+        bool checkedState,
+        LocatorCheckOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => options is null
+            ? Locator(selector).SetCheckedAsync(checkedState, cancellationToken)
+            : Locator(selector).SetCheckedAsync(checkedState, options, cancellationToken);
+
+    /// <summary>Legacy Playwright page-level focus.</summary>
+    public ValueTask FocusAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).FocusAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level attribute read.</summary>
+    public ValueTask<string?> GetAttributeAsync(
+        string selector,
+        string name,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).GetAttributeAsync(name, cancellationToken);
+
+    /// <summary>Legacy Playwright page-level <c>innerHTML</c> read.</summary>
+    public ValueTask<string> InnerHTMLAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).InnerHTMLAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level <c>innerText</c> read.</summary>
+    public ValueTask<string> InnerTextAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).InnerTextAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level <c>value</c> read.</summary>
+    public ValueTask<string?> InputValueAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).InputValueAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level <c>textContent</c> read.</summary>
+    public ValueTask<string> TextContentAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).TextContentAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level checked-state probe.</summary>
+    public ValueTask<bool> IsCheckedAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsCheckedAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level disabled-state probe.</summary>
+    public ValueTask<bool> IsDisabledAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsDisabledAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level editable-state probe.</summary>
+    public ValueTask<bool> IsEditableAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsEditableAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level enabled-state probe.</summary>
+    public ValueTask<bool> IsEnabledAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsEnabledAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level hidden-state probe.</summary>
+    public ValueTask<bool> IsHiddenAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsHiddenAsync(cancellationToken);
+
+    /// <summary>Legacy Playwright page-level visible-state probe.</summary>
+    public ValueTask<bool> IsVisibleAsync(
+        string selector,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+        => Locator(selector, timeout: timeout).IsVisibleAsync(cancellationToken);
 }

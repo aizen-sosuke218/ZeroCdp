@@ -82,6 +82,46 @@ public sealed partial class CdpPage
         return nodes.ToArray();
     }
 
+    internal async ValueTask<ElementHandle?> FrameElementHandleAsync(
+        string frameId,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(frameId, _mainFrameId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        FrameContext self = GetFrameContext(frameId);
+        FrameContext parent = self.Id == 0 ? MainFrameContext : self.Parent ?? MainFrameContext;
+
+        FrameOwnerResult owner = await parent.Session
+            .SendAsync<FrameOwnerResult, GetFrameOwnerParams>(
+                "DOM.getFrameOwner"u8,
+                new GetFrameOwnerParams(frameId),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        long nodeId = owner.NodeId;
+        if (nodeId == 0)
+        {
+            NodeIdsResult pushed = await parent.Session
+                .SendAsync<NodeIdsResult, PushNodesByBackendIdsParams>(
+                    "DOM.pushNodesByBackendIdsToFrontend"u8,
+                    new PushNodesByBackendIdsParams([owner.BackendNodeId]),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (pushed.NodeIds.Length == 0)
+            {
+                throw new CdpException($"The owner element for frame '{frameId}' could not be resolved.");
+            }
+
+            nodeId = pushed.NodeIds[0];
+        }
+
+        return CreateElementHandle(EncodeNodeId(parent, nodeId));
+    }
+
     internal IsolatedWorldRuntime GetFrameRuntime(string frameId)
     {
         if (string.Equals(frameId, _mainFrameId, StringComparison.Ordinal))

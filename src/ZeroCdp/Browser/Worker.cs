@@ -57,5 +57,24 @@ public sealed class Worker
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Evaluates JavaScript in the worker's main context and keeps the result as a handle.
+    /// The handle is bound to the worker session, so its evaluation and disposal target the
+    /// worker rather than the owning page.
+    /// </summary>
+    public async ValueTask<JSHandle> EvaluateHandleAsync(
+        string expression,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        EvaluationResult result = await _session
+            .SendAsync<EvaluationResult, EvaluateParams>(
+                "Runtime.evaluate"u8,
+                EvaluateParams.MainWorld(expression, returnByValue: false),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return JSHandle.FromWorkerResult(Page, result, _session);
+    }
+
     internal void MarkClosed() => Interlocked.Exchange(ref _closed, 1);
 }

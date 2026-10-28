@@ -117,6 +117,8 @@ public sealed partial class CdpPage : IAsyncDisposable
 
     private string? _mainFrameId;
 
+    private ViewportSize? _viewportSize;
+
     private int _dialogOpen;
 
     private int _enabled;
@@ -142,6 +144,7 @@ public sealed partial class CdpPage : IAsyncDisposable
         // The page owns the session's sink so navigation progress is observable; the caller's sink
         // is chained behind it. A committed document invalidates the isolated world.
         _state.MainFrameNavigated = OnMainFrameNavigated;
+        _state.MainFrameCommitted = OnMainFrameCommitted;
         _state.Load = RaiseLoad;
         _state.DomContentLoaded = RaiseDomContentLoaded;
         _state.FrameNavigated = OnFrameNavigated;
@@ -254,6 +257,9 @@ public sealed partial class CdpPage : IAsyncDisposable
 
     /// <summary>Id of the main frame, known once <see cref="EnableAsync"/> has run.</summary>
     public string? MainFrameId => _mainFrameId;
+
+    /// <summary>The emulated layout viewport, or null when the browser default is used.</summary>
+    public ViewportSize? ViewportSize => _viewportSize;
 
     /// <summary>
     /// JavaScript execution environment for this page. It is bound to the main frame and is
@@ -448,6 +454,7 @@ public sealed partial class CdpPage : IAsyncDisposable
                         screen.Height),
                     cancellationToken)
                 .ConfigureAwait(false);
+            _viewportSize = viewport;
         }
 
         if (!string.IsNullOrEmpty(options.UserAgent))
